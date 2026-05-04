@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { useLocation } from "react-router-dom";
 
 // Componentes financieros reutilizados
 import Ingreso from './Ingreso';
@@ -12,6 +13,8 @@ const Secretaria = () => {
   const [instructors, setInstructors] = useState([]);
   const [agendaList, setAgendaList] = useState([]);
   const [loading, setLoading] = useState(false);
+  const location = useLocation();
+
 
   // Configuramos las cabeceras de autorización de forma centralizada
   const axiosConfig = useMemo(() => ({
@@ -62,6 +65,18 @@ const Secretaria = () => {
   useEffect(() => {
     fetchData();
   }, [fetchData, view]);
+
+  useEffect(() => {
+    setView('INICIO');
+  }, [location.pathname]);
+  
+  useEffect(() => {
+    const total = Number(financeData.horas) * Number(financeData.tarifa);
+    setFinanceData(prev => ({
+      ...prev,
+      total
+    }));
+  }, [financeData.horas, financeData.tarifa]);
 
   // --- MANEJADORES DE EVENTOS ---
   const handleAgendaSubmit = async (e) => {
@@ -250,7 +265,7 @@ const Secretaria = () => {
     return (
       <Component 
         formData={financeData} 
-        handleChange={e => setFinanceData({...financeData, [e.target.name]: e.target.value})} 
+        handleChange={e => setFinanceData({...financeData, [e.target.name]: e.target.value})}
         handleSubmit={handleFinanceSubmit} 
         InstructorField={() => (
           <InstructorSelector 
