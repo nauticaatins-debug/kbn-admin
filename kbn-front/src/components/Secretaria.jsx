@@ -210,6 +210,7 @@ const Secretaria = () => {
     return (
       <div className="max-w-2xl mx-auto p-6 md:p-10 bg-white shadow-2xl rounded-[2.5rem] mt-5 md:mt-10 border border-gray-100">
         <h2 className="text-2xl font-black text-center mb-8 uppercase italic tracking-tighter">{agendaData.id ? '🔄 Reasignar Instructor' : '📅 Nueva Asignación'}</h2>
+        <button onClick={() => setView('INICIO')} className="text-indigo-600 font-bold text-sm">← VOLVER</button>
         <form onSubmit={handleAgendaSubmit} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1">
@@ -263,6 +264,9 @@ const Secretaria = () => {
   if (view === 'INGRESO' || view === 'EGRESO') {
     const Component = view === 'INGRESO' ? Ingreso : Egreso;
     return (
+      <div className="max-w-2xl mx-auto p-4 md:p-6 mt-5">
+
+      <button onClick={() => setView('INICIO')} className="text-indigo-600 font-bold text-sm">← VOLVER</button>
       <Component 
         formData={financeData} 
         handleChange={e => setFinanceData({...financeData, [e.target.name]: e.target.value})}
@@ -278,6 +282,7 @@ const Secretaria = () => {
         )}
         setView={setView} 
       />
+      </div>
     );
   }
   return null;
