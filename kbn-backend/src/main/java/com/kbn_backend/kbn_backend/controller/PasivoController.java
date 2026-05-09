@@ -10,25 +10,20 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/pasivos")
-@CrossOrigin(origins = "*")
 public class PasivoController {
 
     @Autowired
     private PasivoRepository pasivoRepository;
 
+    // Obtener todos los pasivos (Soluciona el GET 500)
     @GetMapping
-    public List<Pasivo> listar() {
-        return pasivoRepository.findAll();
+    public ResponseEntity<List<Pasivo>> listarPasivos() {
+        return ResponseEntity.ok(pasivoRepository.findAll());
     }
 
+    // Crear un nuevo pasivo (Soluciona el POST 500)
     @PostMapping
-    public ResponseEntity<Pasivo> crear(@RequestBody Pasivo pasivo) {
-        try {
-            // Si el front manda el número como string,
-            // Jackson lo convierte a Double automáticamente si el modelo es Double.
-            return ResponseEntity.ok(pasivoRepository.save(pasivo));
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().build();
-        }
+    public ResponseEntity<Pasivo> crearPasivo(@RequestBody Pasivo pasivo) {
+        return ResponseEntity.ok(pasivoRepository.save(pasivo));
     }
 }

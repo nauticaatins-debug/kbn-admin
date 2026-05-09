@@ -16,7 +16,6 @@ const Secretaria = () => {
   const [loading, setLoading] = useState(false);
   const location = useLocation();
 
-
   // Configuramos las cabeceras de autorización de forma centralizada
   const axiosConfig = useMemo(() => ({
     headers: { Authorization: `Bearer ${token}` }
@@ -31,11 +30,13 @@ const Secretaria = () => {
   };
   const [agendaData, setAgendaData] = useState(initialAgendaData);
 
+  // AGREGAMOS pasivoId PARA PODER VINCULAR EL EGRESO CON LA DEUDA
   const initialFinanceData = {
     tipoTransaccion: 'INGRESO', fecha: today, actividad: 'Clases',
     actividadOtro: '', vendedor: '', instructor: '', detalles: '',
     horas: 0, tarifa: 0, total: 0, gastos: 0, comision: 0,
-    formaPago: 'Efectivo', formaPagoOtro: '', moneda: 'USD'
+    formaPago: 'Efectivo', formaPagoOtro: '', moneda: 'USD',
+    pasivoId: '' // <- CLAVE PARA PAGAR PASIVOS
   };
   const [financeData, setFinanceData] = useState(initialFinanceData);
 
@@ -84,7 +85,6 @@ const Secretaria = () => {
     e.preventDefault();
     if (!agendaData.instructorId) return alert("Por favor selecciona un instructor");
 
-    // Conversión de tipos para el Backend Java
     const dataToSubmit = {
       ...agendaData,
       instructorId: Number(agendaData.instructorId),
@@ -112,7 +112,12 @@ const Secretaria = () => {
   const handleFinanceSubmit = async (e) => {
     e.preventDefault();
     try {
-      const payload = { ...financeData, tipoTransaccion: view };
+      // Si el pasivoId está vacío, lo mandamos como null para que el backend no falle
+      const payload = { 
+        ...financeData, 
+        tipoTransaccion: view,
+        pasivoId: financeData.pasivoId ? Number(financeData.pasivoId) : null
+      };
       await axios.post('https://kbnadmin-production.up.railway.app/api/clases/guardar', payload, axiosConfig);
       alert(`${view} registrado correctamente.`);
       setFinanceData(initialFinanceData);
@@ -132,7 +137,7 @@ const Secretaria = () => {
         value={value} 
         onChange={onChange} 
         className="p-4 bg-gray-50 rounded-2xl w-full border-none focus:ring-2 focus:ring-indigo-500 font-bold" 
-        required
+        required={!isFinance} // Hacemos que no sea obligatorio en egresos generales
       >
         <option value="">Seleccionar...</option>
         {instructors.map(i => (
@@ -145,10 +150,9 @@ const Secretaria = () => {
   );
 
   // --- RENDERIZADO DE VISTAS ---
-
   if (view === 'INICIO') {
     return (
-      <div className="max-w-5xl mx-auto p-4 md:p-10 mt-5">
+      <div className="max-w-5xl mx-auto p-4 md:p-10 mt-5 animate-fadeIn">
         <h1 className="text-2xl md:text-3xl font-black text-gray-800 mb-8 text-center uppercase italic tracking-tighter">Panel de Secretaria KBN</h1>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
           <MenuCard icon="🖥️" title="Monitor" sub="Estados" color="bg-gray-900" onClick={() => setView('MONITOR')} />
@@ -163,10 +167,10 @@ const Secretaria = () => {
 
   if (view === 'MONITOR') {
     return (
-      <div className="max-w-6xl mx-auto p-4">
-        <div className="flex justify-between items-center mb-6">
+      <div className="max-w-6xl mx-auto p-4 animate-fadeIn">
+        <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
           <h2 className="text-xl font-black uppercase text-gray-800 italic">Monitor de Operaciones</h2>
-          <button onClick={() => setView('INICIO')} className="text-indigo-600 font-bold text-sm">← VOLVER</button>
+          <button onClick={() => setView('INICIO')} className="text-indigo-600 font-bold text-sm uppercase tracking-widest">← VOLVER</button>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {loading ? <p className="col-span-full text-center py-10 font-bold text-gray-400">Actualizando datos...</p> : 
@@ -210,8 +214,8 @@ const Secretaria = () => {
 
   if (view === 'CALENDARIO') {
     return (
-      <div className="max-w-2xl mx-auto p-6 md:p-10 bg-white shadow-2xl rounded-[2.5rem] mt-5 md:mt-10 border border-gray-100">
-        <button onClick={() => setView('INICIO')} className="text-indigo-600 font-bold text-sm">← VOLVER</button>
+      <div className="max-w-2xl mx-auto p-6 md:p-10 bg-white shadow-2xl rounded-[2.5rem] mt-5 md:mt-10 border border-gray-100 animate-fadeIn">
+        <button onClick={() => setView('INICIO')} className="text-indigo-600 font-bold text-sm uppercase tracking-widest mb-4">← VOLVER</button>
         <h2 className="text-2xl font-black text-center mb-8 uppercase italic tracking-tighter">{agendaData.id ? '🔄 Reasignar Instructor' : '📅 Nueva Asignación'}</h2>
         <form onSubmit={handleAgendaSubmit} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -266,24 +270,24 @@ const Secretaria = () => {
   if (view === 'INGRESO' || view === 'EGRESO') {
     const Component = view === 'INGRESO' ? Ingreso : Egreso;
     return (
-      <div className="max-w-2xl mx-auto p-4 md:p-6 mt-5">
-
-      <button onClick={() => setView('INICIO')} className="text-indigo-600 font-bold text-sm">← VOLVER</button>
-      <Component 
-        formData={financeData} 
-        handleChange={e => setFinanceData({...financeData, [e.target.name]: e.target.value})}
-        handleSubmit={handleFinanceSubmit} 
-        InstructorField={() => (
-          <InstructorSelector 
-            label="Instructor Relacionado" 
-            name="instructor" 
-            isFinance={true}
-            value={financeData.instructor} 
-            onChange={e => setFinanceData({...financeData, instructor: e.target.value})} 
-          />
-        )}
-        setView={setView} 
-      />
+      <div className="max-w-2xl mx-auto p-4 md:p-6 mt-5 animate-fadeIn">
+        <button onClick={() => setView('INICIO')} className="text-indigo-600 font-bold text-sm uppercase tracking-widest mb-4">← VOLVER</button>
+        <Component 
+          formData={financeData} 
+          handleChange={e => setFinanceData({...financeData, [e.target.name]: e.target.value})}
+          handleSubmit={handleFinanceSubmit} 
+          axiosConfig={axiosConfig} /* Pasamos axiosConfig por si Egreso necesita cargar los pasivos */
+          InstructorField={() => (
+            <InstructorSelector 
+              label="Instructor Relacionado (Opcional)" 
+              name="instructor" 
+              isFinance={true}
+              value={financeData.instructor} 
+              onChange={e => setFinanceData({...financeData, instructor: e.target.value})} 
+            />
+          )}
+          setView={setView} 
+        />
       </div>
     );
   }
