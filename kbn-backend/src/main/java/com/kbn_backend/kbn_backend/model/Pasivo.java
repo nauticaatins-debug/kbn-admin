@@ -3,67 +3,23 @@ package com.kbn_backend.kbn_backend.model;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
 import lombok.Data;
-
-import java.time.LocalDate;
 import java.util.List;
+import java.util.ArrayList;
 
 @Entity
-@Data // Si usas Lombok, sino genera getters/setters
+@Data
 public class Pasivo {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
     private String titulo;
     private String descripcion;
-    private Double montoTotal; // Cambia a Double si estaba como String
+    private Double montoTotal; // Asegurate que sea Double
     private String moneda;
-    private String fecha; // Si usas String en el frontend, mantenlo String aquí o LocalDate
+    private String fecha;
 
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public String getTitulo() {
-        return titulo;
-    }
-
-    public void setTitulo(String titulo) {
-        this.titulo = titulo;
-    }
-
-    public String getDescripcion() {
-        return descripcion;
-    }
-
-    public void setDescripcion(String descripcion) {
-        this.descripcion = descripcion;
-    }
-
-    public Double getMontoTotal() {
-        return montoTotal;
-    }
-
-    public void setMontoTotal(Double montoTotal) {
-        this.montoTotal = montoTotal;
-    }
-
-    public String getMoneda() {
-        return moneda;
-    }
-
-    public void setMoneda(String moneda) {
-        this.moneda = moneda;
-    }
-
-    public String getFecha() {
-        return fecha;
-    }
-
-    public void setFecha(String fecha) {
-        this.fecha = fecha;
-    }
+    @OneToMany(mappedBy = "pasivo", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonManagedReference // ESTO EVITA EL ERROR 500 POR BUCLE INFINITO
+    private List<PagoPasivo> historialPagos = new ArrayList<>();
 }
