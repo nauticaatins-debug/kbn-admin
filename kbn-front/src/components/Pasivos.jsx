@@ -247,7 +247,7 @@ const Pasivos = ({ axiosConfig, setView }) => {
                 <label className="text-[10px] font-black text-gray-400 uppercase ml-2">Descripción / Nota</label>
                 <input 
                   type="text" 
-                  placeholder="Ej: Profe de boxeo mañana" 
+                  placeholder="Ej: PAGO POR CLASES" 
                   className="w-full p-4 bg-gray-50 rounded-2xl border-none font-bold" 
                   value={newPasivo.descripcion} 
                   onChange={e => setNewPasivo({...newPasivo, descripcion: e.target.value})} 
