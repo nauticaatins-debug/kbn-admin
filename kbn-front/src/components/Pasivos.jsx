@@ -217,20 +217,62 @@ const Pasivos = ({ axiosConfig, setView }) => {
           <div className="bg-white w-full max-w-md rounded-[3rem] p-10 shadow-2xl">
             <h2 className="font-black uppercase italic mb-6 text-2xl text-center">Nueva Cuenta</h2>
             <form onSubmit={handleCreatePasivo} className="space-y-4">
-              <input type="text" placeholder="Nombre (Ej: Profe Facu)" className="w-full p-4 bg-gray-50 rounded-2xl border-2 border-transparent focus:border-indigo-500 outline-none font-bold" value={newPasivo.titulo} onChange={e => setNewPasivo({...newPasivo, titulo: e.target.value})} required />
+              {/* NOMBRE */}
+              <input 
+                type="text" 
+                placeholder="Nombre (Ej: Profe Facu)" 
+                className="w-full p-4 bg-gray-50 rounded-2xl border-2 border-transparent focus:border-indigo-500 outline-none font-bold" 
+                value={newPasivo.titulo} 
+                onChange={e => setNewPasivo({...newPasivo, titulo: e.target.value})} 
+                required 
+              />
               
+              {/* ESTADO INICIAL */}
+              <div className="col-span-2">
+                <label className="text-[10px] font-black text-gray-400 uppercase ml-2">Estado Inicial</label>
+                <select 
+                  className="w-full p-4 bg-gray-100 rounded-2xl border-none font-bold" 
+                  value={newPasivo.tipoRegistro} 
+                  onChange={e => setNewPasivo({...newPasivo, tipoRegistro: e.target.value})} 
+                  required
+                >
+                  <option value="">Seleccionar...</option>
+                  <option value="DEUDA">Deuda</option>
+                  <option value="ADELANTO">Adelanto</option>
+                </select>
+              </div>
+
+              {/* --- NUEVO CAMPO: DESCRIPCIÓN DEBAJO DE ESTADO INICIAL --- */}
+              <div>
+                <label className="text-[10px] font-black text-gray-400 uppercase ml-2">Descripción / Nota</label>
+                <input 
+                  type="text" 
+                  placeholder="Ej: Profe de boxeo mañana" 
+                  className="w-full p-4 bg-gray-50 rounded-2xl border-none font-bold" 
+                  value={newPasivo.descripcion} 
+                  onChange={e => setNewPasivo({...newPasivo, descripcion: e.target.value})} 
+                />
+              </div>
+              {/* ------------------------------------------------------ */}
+
               <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2">
-                  <label className="text-[10px] font-black text-gray-400 uppercase ml-2">Estado Inicial</label>
-                  <select className="w-full p-4 bg-gray-100 rounded-2xl border-none font-bold" value={newPasivo.tipoRegistro} onChange={e => setNewPasivo({...newPasivo, tipoRegistro: e.target.value})} required>
-                    <option value="">Seleccionar...</option>
-                    <option value="DEUDA">Deuda</option>
-                    <option value="ADELANTO">Adelanto</option>
-                  </select>
-                </div>
-                <input type="number" step="0.01" placeholder="Monto" className="p-4 bg-gray-50 rounded-2xl border-none font-bold" value={newPasivo.montoTotal} onChange={e => setNewPasivo({...newPasivo, montoTotal: e.target.value})} required />
-                <select className="p-4 bg-gray-50 rounded-2xl border-none font-bold" value={newPasivo.moneda} onChange={e => setNewPasivo({...newPasivo, moneda: e.target.value})}>
-                  <option value="BRL">BRL</option><option value="USD">USD</option><option value="ARS">ARS</option>
+                <input 
+                  type="number" 
+                  step="0.01" 
+                  placeholder="Monto" 
+                  className="p-4 bg-gray-50 rounded-2xl border-none font-bold" 
+                  value={newPasivo.montoTotal} 
+                  onChange={e => setNewPasivo({...newPasivo, montoTotal: e.target.value})} 
+                  required 
+                />
+                <select 
+                  className="p-4 bg-gray-50 rounded-2xl border-none font-bold" 
+                  value={newPasivo.moneda} 
+                  onChange={e => setNewPasivo({...newPasivo, moneda: e.target.value})}
+                >
+                  <option value="BRL">BRL</option>
+                  <option value="USD">USD</option>
+                  <option value="ARS">ARS</option>
                 </select>
               </div>
 
