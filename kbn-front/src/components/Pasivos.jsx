@@ -37,7 +37,6 @@ const Pasivos = ({ axiosConfig, setView }) => {
   const handleCreatePasivo = async (e) => {
     e.preventDefault();
     try {
-      // Deuda inicial = valor negativo | Adelanto inicial = valor positivo
       const montoInicial = parseFloat(newPasivo.montoTotal);
       const montoCalculado = newPasivo.tipoRegistro === 'DEUDA' ? -Math.abs(montoInicial) : Math.abs(montoInicial);
       
@@ -71,11 +70,13 @@ const Pasivos = ({ axiosConfig, setView }) => {
     try {
       const montoMovimiento = parseFloat(transactionData.monto);
       let nuevoSaldo = parseFloat(selectedPasivo.montoTotal);
+      
+      // Creamos una copia del historial actual
+      const nuevoHistorial = [...(selectedPasivo.historialPagos || [])];
 
       if (transactionType === 'ADELANTO') {
-        // CORRECCIÓN: El adelanto/pago SUMA al saldo (lo acerca a cero o lo hace positivo)
         nuevoSaldo += montoMovimiento;
-
+        
         // Registrar el Egreso en Caja
         const payloadEgreso = {
           tipoTransaccion: 'EGRESO',
@@ -89,15 +90,31 @@ const Pasivos = ({ axiosConfig, setView }) => {
           instructor: 'Secretaria'
         };
         await axios.post('https://kbnadmin-production.up.railway.app/api/clases/guardar', payloadEgreso, axiosConfig);
+        
+        // El pago ya se agrega al historial por el backend si está vinculado, 
+        // pero para asegurar la vista inmediata (o si el backend no lo hace solo):
+        nuevoHistorial.push({
+            montoPagado: montoMovimiento,
+            fecha: transactionData.fecha,
+            nota: transactionData.detalles || "Pago/Adelanto registrado"
+        });
       } else {
-        // Registrar DEUDA: El profe trabajó, le debemos más, RESTA al saldo (lo hace más negativo)
+        // ES DEUDA: Resta al saldo
         nuevoSaldo -= montoMovimiento;
+        
+        // AGREGAMOS AL HISTORIAL: Aunque no sea un "pago", es un movimiento de la cuenta
+        nuevoHistorial.push({
+            montoPagado: -montoMovimiento, // Lo ponemos negativo para indicar que es deuda
+            fecha: transactionData.fecha,
+            nota: `DEUDA: ${transactionData.detalles}`
+        });
       }
 
-      // Actualizar el Pasivo con el nuevo saldo
+      // Actualizar el Pasivo con el nuevo saldo Y el nuevo historial
       await axios.put(`https://kbnadmin-production.up.railway.app/api/pasivos/${selectedPasivo.id}`, {
           ...selectedPasivo,
-          montoTotal: nuevoSaldo
+          montoTotal: nuevoSaldo,
+          historialPagos: nuevoHistorial
       }, axiosConfig);
 
       setShowTransactionModal(false);
@@ -106,6 +123,19 @@ const Pasivos = ({ axiosConfig, setView }) => {
       alert('Operación realizada con éxito.');
     } catch (err) {
       alert("Error en la transacción.");
+    }
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    try {
+        await axios.put(`https://kbnadmin-production.up.railway.app/api/pasivos/${editPasivo.id}`, editPasivo, axiosConfig);
+        setShowEditModal(false);
+        fetchPasivos();
+        alert("Datos actualizados");
+    } catch (err) {
+        console.error(err);
+        alert("Error al actualizar");
     }
   };
 
@@ -149,13 +179,13 @@ const Pasivos = ({ axiosConfig, setView }) => {
                             {isNegative ? 'Le debemos' : (isPositive ? 'A nuestro favor' : 'Saldado')}
                         </span>
                         <div className="flex gap-1">
-                          <button onClick={() => { setEditPasivo(p); setShowEditModal(true); }} className="p-2 hover:bg-gray-100 rounded-lg text-xs">✏️</button>
-                          <button onClick={() => handleDelete(p.id)} className="p-2 hover:bg-rose-50 rounded-lg text-xs">🗑️</button>
+                          <button onClick={() => { setEditPasivo(p); setShowEditModal(true); }} className="p-2 hover:bg-gray-100 rounded-lg text-lg">✏️</button>
+                          <button onClick={() => handleDelete(p.id)} className="p-2 hover:bg-rose-50 rounded-lg text-lg">🗑️</button>
                         </div>
                     </div>
                     
                     <h3 className="font-black text-gray-800 uppercase text-xl leading-tight mb-1">{p.titulo}</h3>
-                    <p className="text-[11px] text-gray-400 font-bold uppercase mb-4">{p.descripcion}</p>
+                    <p className="text-[11px] text-gray-400 font-bold uppercase mb-4 h-8 overflow-hidden">{p.descripcion}</p>
                     
                     <div className={`${isNegative ? 'bg-rose-50' : (isPositive ? 'bg-emerald-50' : 'bg-gray-50')} p-5 rounded-3xl mb-6 text-center`}>
                         <span className="block text-[10px] font-black text-gray-400 uppercase mb-1">Saldo Actual</span>
@@ -164,7 +194,6 @@ const Pasivos = ({ axiosConfig, setView }) => {
                         </span>
                     </div>
                     
-                    {/* ACCIONES ESCRITAS */}
                     <div className="space-y-2 mt-auto">
                       <div className="grid grid-cols-2 gap-2">
                         <button onClick={() => { setTransactionType('DEUDA'); setSelectedPasivo(p); setShowTransactionModal(true); }} className="bg-rose-600 hover:bg-rose-700 text-white py-3 rounded-xl font-black text-[10px] uppercase tracking-tighter transition-all">
@@ -175,7 +204,7 @@ const Pasivos = ({ axiosConfig, setView }) => {
                         </button>
                       </div>
                       <button onClick={() => { setSelectedPasivo(p); setShowHistoryModal(true); }} className="w-full bg-gray-900 hover:bg-black text-white py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all">
-                        Ver Historial de Pagos
+                        Ver Historial de Movimientos
                       </button>
                     </div>
                 </div>
@@ -215,7 +244,7 @@ const Pasivos = ({ axiosConfig, setView }) => {
         </div>
       )}
 
-      {/* MODAL TRANSACCION (DEUDA O PAGO) */}
+      {/* MODAL TRANSACCION */}
       {showTransactionModal && selectedPasivo && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4 text-gray-800">
           <div className={`bg-white w-full max-w-md rounded-[3rem] p-10 shadow-2xl border-t-[15px] ${transactionType === 'ADELANTO' ? 'border-emerald-500' : 'border-rose-500'}`}>
@@ -247,23 +276,54 @@ const Pasivos = ({ axiosConfig, setView }) => {
         </div>
       )}
 
-      {/* MODAL HISTORIAL */}
+      {/* MODAL EDITAR PASIVO */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4 text-gray-800">
+          <div className="bg-white w-full max-w-md rounded-[3rem] p-10 shadow-2xl border-t-[15px] border-amber-500">
+            <h2 className="font-black uppercase italic mb-6 text-2xl text-center text-amber-600">Editar Perfil</h2>
+            <form onSubmit={handleEditSubmit} className="space-y-4">
+              <div>
+                <label className="text-[10px] font-black text-gray-400 uppercase ml-2">Nombre / Referencia</label>
+                <input type="text" className="w-full p-4 bg-gray-50 rounded-2xl border-none font-bold" value={editPasivo.titulo} onChange={e => setEditPasivo({...editPasivo, titulo: e.target.value})} required />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-gray-400 uppercase ml-2">Descripción</label>
+                <textarea className="w-full p-4 bg-gray-50 rounded-2xl border-none font-bold h-24" value={editPasivo.descripcion} onChange={e => setEditPasivo({...editPasivo, descripcion: e.target.value})} />
+              </div>
+              
+              <div className="bg-amber-50 p-4 rounded-2xl">
+                <p className="text-[10px] font-bold text-amber-700 text-center uppercase">Nota: El saldo se gestiona desde los botones de Deuda/Adelanto.</p>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => setShowEditModal(false)} className="flex-1 font-black uppercase text-xs text-gray-400">Cancelar</button>
+                <button type="submit" className="flex-[2] bg-amber-500 text-white py-4 rounded-2xl font-black uppercase text-xs shadow-lg">Guardar Cambios</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL HISTORIAL ACTUALIZADO */}
       {showHistoryModal && selectedPasivo && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4">
           <div className="bg-white w-full max-w-lg rounded-[3rem] p-10 shadow-2xl">
             <div className="flex justify-between items-center mb-8">
-              <h2 className="font-black uppercase text-xl italic text-gray-800">Historial: {selectedPasivo.titulo}</h2>
+              <h2 className="font-black uppercase text-xl italic text-gray-800">Movimientos: {selectedPasivo.titulo}</h2>
               <button onClick={() => setShowHistoryModal(false)} className="text-2xl">✕</button>
             </div>
             <div className="space-y-3 max-h-80 overflow-y-auto pr-2 mb-8">
               {selectedPasivo.historialPagos?.length > 0 ? (
-                selectedPasivo.historialPagos.map(pago => (
-                  <div key={pago.id} className="bg-gray-50 p-5 rounded-3xl flex justify-between items-center border-l-8 border-indigo-500">
+                // Ordenamos por fecha descendente (más reciente arriba)
+                [...selectedPasivo.historialPagos].reverse().map((mov, idx) => (
+                  <div key={idx} className={`bg-gray-50 p-5 rounded-3xl flex justify-between items-center border-l-8 ${mov.montoPagado > 0 ? 'border-emerald-500' : 'border-rose-500'}`}>
                     <div>
-                      <p className="text-[10px] font-black text-gray-400 uppercase">{pago.fecha}</p>
-                      <p className="text-sm font-black text-gray-700">{pago.nota}</p>
+                      <p className="text-[10px] font-black text-gray-400 uppercase">{mov.fecha}</p>
+                      <p className="text-sm font-black text-gray-700">{mov.nota}</p>
                     </div>
-                    <span className="font-black text-indigo-600 text-lg">+ {pago.montoPagado}</span>
+                    <span className={`font-black text-lg ${mov.montoPagado > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        {mov.montoPagado > 0 ? `+ ${mov.montoPagado}` : `- ${Math.abs(mov.montoPagado)}`}
+                    </span>
                   </div>
                 ))
               ) : (
