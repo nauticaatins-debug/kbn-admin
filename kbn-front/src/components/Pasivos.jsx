@@ -161,8 +161,7 @@ const Pasivos = ({ axiosConfig, setView }) => {
 
       {/* BOTÓN CREAR */}
       <button onClick={() => setShowCreateModal(true)} className="w-full mb-8 bg-indigo-600 hover:bg-indigo-700 text-white p-6 rounded-[2rem] shadow-xl shadow-indigo-100 flex flex-col items-center transition-all group">
-        <span className="text-3xl mb-1 group-hover:scale-110 transition-transform">👤+</span>
-        <span className="font-black uppercase text-sm tracking-[0.2em]">Registrar Nueva Persona / Proveedor</span>
+        <span className="text-3xl mb-1 group-hover:scale-110 transition-transform">+ Registrar Pasivo</span>
       </button>
 
       {/* GRID DE TARJETAS */}
@@ -225,13 +224,13 @@ const Pasivos = ({ axiosConfig, setView }) => {
                   <label className="text-[10px] font-black text-gray-400 uppercase ml-2">Estado Inicial</label>
                   <select className="w-full p-4 bg-gray-100 rounded-2xl border-none font-bold" value={newPasivo.tipoRegistro} onChange={e => setNewPasivo({...newPasivo, tipoRegistro: e.target.value})} required>
                     <option value="">Seleccionar...</option>
-                    <option value="DEUDA">Le debemos plata (Deuda)</option>
-                    <option value="ADELANTO">Nos debe / Le adelantamos (Adelanto)</option>
+                    <option value="DEUDA">Deuda</option>
+                    <option value="ADELANTO">Adelanto</option>
                   </select>
                 </div>
                 <input type="number" step="0.01" placeholder="Monto" className="p-4 bg-gray-50 rounded-2xl border-none font-bold" value={newPasivo.montoTotal} onChange={e => setNewPasivo({...newPasivo, montoTotal: e.target.value})} required />
                 <select className="p-4 bg-gray-50 rounded-2xl border-none font-bold" value={newPasivo.moneda} onChange={e => setNewPasivo({...newPasivo, moneda: e.target.value})}>
-                  <option value="USD">USD</option><option value="ARS">ARS</option><option value="BRL">BRL</option>
+                  <option value="BRL">BRL</option><option value="USD">USD</option><option value="ARS">ARS</option>
                 </select>
               </div>
 
