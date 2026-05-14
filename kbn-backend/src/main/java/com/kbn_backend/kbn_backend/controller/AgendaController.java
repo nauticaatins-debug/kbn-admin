@@ -4,6 +4,7 @@ import com.kbn_backend.kbn_backend.model.Agenda;
 import com.kbn_backend.kbn_backend.model.Usuario;
 import com.kbn_backend.kbn_backend.repository.AgendaRepository;
 import com.kbn_backend.kbn_backend.repository.UsuarioRepository;
+import com.kbn_backend.kbn_backend.service.WhatsAppService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -22,22 +23,30 @@ public class AgendaController {
     @Autowired
     private UsuarioRepository usuarioRepository;
 
+    @Autowired
+    private WhatsAppService whatsAppService; // ← NUEVO
+
     // 1. Crear nueva cita (Secretaria)
     @PostMapping("/crear")
     public ResponseEntity<?> crearAgenda(@RequestBody Agenda agenda) {
         try {
-            // Buscar instructor
-            Optional<Usuario> instructor = usuarioRepository.findById(agenda.getInstructorId());
-            if (instructor.isPresent()) {
-                agenda.setNombreInstructor(
-                        instructor.get().getNombre() + " " + instructor.get().getApellido()
-                );
-            } else {
+            Optional<Usuario> instructorOpt = usuarioRepository.findById(agenda.getInstructorId());
+
+            if (instructorOpt.isEmpty()) {
                 return ResponseEntity.badRequest().body("Instructor no encontrado");
             }
 
+            Usuario instructor = instructorOpt.get();
+            agenda.setNombreInstructor(instructor.getNombre() + " " + instructor.getApellido());
             agenda.setEstado("PENDIENTE");
+
             Agenda nuevaAgenda = agendaRepository.save(agenda);
+
+            // ─── Notificación WhatsApp ──────────────────────────────────────
+            // Se ejecuta después de guardar. Si falla, no rompe el flujo.
+            whatsAppService.notificarNuevaClase(instructor, nuevaAgenda);
+            // ───────────────────────────────────────────────────────────────
+
             return ResponseEntity.ok(nuevaAgenda);
 
         } catch (Exception e) {

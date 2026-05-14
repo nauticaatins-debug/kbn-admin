@@ -112,6 +112,11 @@
 			<artifactId>jjwt</artifactId>
 			<version>0.9.1</version> <!-- o la versión más reciente -->
 		</dependency>
+		<dependency>
+			<groupId>com.twilio.sdk</groupId>
+			<artifactId>twilio</artifactId>
+			<version>10.1.5</version>
+		</dependency>
 
 
 	</dependencies>

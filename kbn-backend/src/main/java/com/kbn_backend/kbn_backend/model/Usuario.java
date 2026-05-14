@@ -3,7 +3,6 @@ package com.kbn_backend.kbn_backend.model;
 import jakarta.persistence.*;
 import lombok.Data;
 
-
 @Entity
 @Data
 public class Usuario {
@@ -18,6 +17,8 @@ public class Usuario {
     private String email;
     @Column
     private String password;
+    @Column
+    private String telefono;
     @ManyToOne
     @JoinColumn(name = "role_id")
     private Rol rol;

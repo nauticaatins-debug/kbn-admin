@@ -143,7 +143,6 @@ const ReporteEstadisticas = () => {
         });
 
         egresosFiltrados.forEach(item => {
-            // Lógica corregida: prioriza total (el campo que arreglamos) sobre gastosAsociados
             const monto = parseFloat(item.total) || parseFloat(item.gastosAsociados) || 0;
             procesarMonto(item.moneda, -monto);
         });
@@ -164,17 +163,54 @@ const ReporteEstadisticas = () => {
         setPendientes(prev => prev.map(p => p.id === id ? { ...p, asignadoA: val } : p));
     };
 
-    const saveAssignment = async (id, asignadoA) => {
+    // NUEVA LÓGICA DE ASIGNACIÓN CON PORCENTAJES PARA IGNA Y JOSE
+    const saveAssignment = async (item, asignadoA) => {
         if (!asignadoA || asignadoA === 'NINGUNO') return alert("Selecciona un instructor válido.");
+        
+        const montoBase = parseFloat(item.total) || 0;
+        let pIgna = 10;
+        let pJose = 10;
+
+        // Reglas de negocio
+        if (asignadoA === 'IGNA') {
+            pIgna = 15;
+            pJose = 10;
+        } else if (asignadoA === 'JOSE') {
+            pIgna = 10;
+            pJose = 15;
+        } else if (asignadoA === 'AMBOS') {
+            pIgna = 12.5;
+            pJose = 12.5;
+        } else {
+            // Si es ALE u otro, ambos ausentes = 10%
+            pIgna = 10;
+            pJose = 10;
+        }
+
+        const montoIgna = (montoBase * pIgna) / 100;
+        const montoJose = (montoBase * pJose) / 100;
+
+        // Generamos el texto a agregar en los detalles
+        const strIgna = pIgna.toString().replace('.', ',');
+        const strJose = pJose.toString().replace('.', ',');
+        const notaPorcentajes = ` | Reparto: IGNA ${strIgna}% ($${montoIgna.toFixed(2)}) - JOSE ${strJose}% ($${montoJose.toFixed(2)})`;
+        
+        // Evitamos concatenar repetidamente si re-asignan la misma clase
+        let detallesActuales = item.detalles || '';
+        if (detallesActuales.includes('| Reparto:')) {
+            detallesActuales = detallesActuales.split('| Reparto:')[0].trim();
+        }
+        const nuevosDetalles = detallesActuales + notaPorcentajes;
+
         try {
-            await axios.put(`https://kbnadmin-production.up.railway.app/api/clases/asignar/${id}`, 
-                { asignadoA }, 
+            await axios.put(`https://kbnadmin-production.up.railway.app/api/clases/asignar/${item.id}`, 
+                { asignadoA, detalles: nuevosDetalles }, 
                 { headers: { Authorization: `Bearer ${token}` } }
             );
             alert("Asignado correctamente.");
             fetchData();
         } catch (e) {
-            alert("Error de red o no autorizado");
+            alert("Error de red o no autorizado al asignar.");
         }
     };
 
@@ -187,10 +223,34 @@ const ReporteEstadisticas = () => {
         alert(`Editar ID: ${id}`);
     };
 
+    // --- RENDER DE PORCENTAJES EN VIVO PARA ASIGNADOS ---
+    const renderRepartoDesglose = (item) => {
+        const montoBase = parseFloat(item.total) || 0;
+        let pIgna = 10, pJose = 10;
+        
+        if (item.asignadoA === 'IGNA') { pIgna = 15; pJose = 10; }
+        else if (item.asignadoA === 'JOSE') { pIgna = 10; pJose = 15; }
+        else if (item.asignadoA === 'AMBOS') { pIgna = 12.5; pJose = 12.5; }
+        
+        const mIgna = (montoBase * pIgna) / 100;
+        const mJose = (montoBase * pJose) / 100;
+
+        return (
+            <div className="mt-2 flex flex-wrap gap-2 text-[10px] font-black uppercase">
+                <span className="bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg border border-indigo-100 shadow-sm">
+                    IGNA {pIgna.toString().replace('.', ',')}%: <span className="text-indigo-900 ml-1">{formatCurrency(mIgna)} {item.moneda}</span>
+                </span>
+                <span className="bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-lg border border-emerald-100 shadow-sm">
+                    JOSE {pJose.toString().replace('.', ',')}%: <span className="text-emerald-900 ml-1">{formatCurrency(mJose)} {item.moneda}</span>
+                </span>
+            </div>
+        );
+    };
+
     // --- RENDERIZADO DE DETALLES ---
     const RenderDetails = ({ item }) => (
         <div className="bg-gray-50 p-4 rounded-b-lg border-t border-gray-200 text-sm grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-fadeIn">
-            <div><span className="font-bold text-gray-700">Detalle:</span> {item.detalles || '-'}</div>
+            <div className="col-span-1 md:col-span-2 lg:col-span-4"><span className="font-bold text-gray-700">Detalle Completo:</span> {item.detalles || '-'}</div>
             <div><span className="font-bold text-gray-700">Vendedor:</span> {item.vendedor || '-'}</div>
             <div><span className="font-bold text-gray-700">Forma Pago:</span> {item.formaPago || '-'}</div>
             
@@ -201,9 +261,6 @@ const ReporteEstadisticas = () => {
                     <div><span className="font-bold text-gray-700">Comisión:</span> {formatCurrency(item.comision)}</div>
                     <div><span className="font-bold text-red-600">Gastos:</span> {formatCurrency(item.gastosAsociados)}</div>
                 </>
-            )}
-             {item.tipoTransaccion === 'EGRESO' && (
-                <div><span className="font-bold text-gray-700">Concepto/Pago:</span> {item.detalles || '-'}</div>
             )}
              <div className="col-span-1 md:col-span-2"><span className="font-bold text-gray-700">Creado por:</span> {item.instructor}</div>
         </div>
@@ -360,9 +417,10 @@ const ReporteEstadisticas = () => {
                                             <option value="NINGUNO">Elegir...</option>
                                             <option value="IGNA">IGNA</option>
                                             <option value="JOSE">JOSE</option>
+                                            <option value="AMBOS">AMBOS (Igna y Jose)</option>
                                             <option value="ALE">ALE</option>
                                         </select>
-                                        <button onClick={() => saveAssignment(item.id, item.asignadoA)} className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 font-bold">OK</button>
+                                        <button onClick={() => saveAssignment(item, item.asignadoA)} className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 font-bold">OK</button>
                                         <button onClick={() => toggleDetails(item.id)} className="bg-gray-200 text-gray-700 px-3 py-1 rounded text-sm">▼</button>
                                     </div>
                                 </div>
@@ -431,6 +489,11 @@ const ReporteEstadisticas = () => {
                                             <span className="bg-green-100 text-green-800 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase">{item.asignadoA}</span>
                                         </div>
                                         <div className="text-sm text-gray-500 mt-1 pl-0 md:pl-28">{item.actividad}</div>
+                                        
+                                        {/* AQUI MOSTRAMOS LOS PORCENTAJES DE IGNA Y JOSE EN VIVO */}
+                                        <div className="pl-0 md:pl-28">
+                                            {renderRepartoDesglose(item)}
+                                        </div>
                                     </div>
                                     <div className="flex gap-2">
                                         <button onClick={() => toggleDetails(item.id)} className="p-2 text-gray-400 hover:text-indigo-600 transition-colors">
