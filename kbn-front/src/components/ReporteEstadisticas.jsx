@@ -137,7 +137,8 @@ const ReporteEstadisticas = () => {
         });
     };
 
-    const aplicarFiltros = (lista) => {
+    // Modificamos aplicarFiltros para que pueda ignorar el "asignadoA" si se lo pedimos
+    const aplicarFiltros = (lista, ignorarAsignadoA = false) => {
         return lista.filter(item => {
             let match = true;
             if (filtros.moneda && item.moneda !== filtros.moneda) match = false;
@@ -146,14 +147,18 @@ const ReporteEstadisticas = () => {
             if (filtros.actividad && item.actividad !== filtros.actividad) match = false;
             if (filtros.fechaInicio && item.fecha < filtros.fechaInicio) match = false;
             if (filtros.fechaFin && item.fecha > filtros.fechaFin) match = false;
-            if (filtros.asignadoA && item.asignadoA !== filtros.asignadoA) match = false;
+            // Solo aplicamos el filtro de asignadoA si NO estamos ignorándolo
+            if (!ignorarAsignadoA && filtros.asignadoA && item.asignadoA !== filtros.asignadoA) match = false;
             return match;
         });
     };
 
     const pendientesFiltrados = useMemo(() => aplicarFiltros(pendientes), [pendientes, filtros]);
     const egresosFiltrados = useMemo(() => aplicarFiltros(egresos), [egresos, filtros]);
+    // Este filtra TODO incluyendo "Asignado A" para la vista de la tabla
     const asignadosFiltrados = useMemo(() => aplicarFiltros(asignados), [asignados, filtros]);
+    // Este filtra todo EXCEPTO "Asignado A" para calcular la liquidación global exacta
+    const asignadosParaLiquidacion = useMemo(() => aplicarFiltros(asignados, true), [asignados, filtros]);
 
     // --- CÁLCULO DE TOTALES GENERALES POR MONEDA ---
     const totalesPorMoneda = useMemo(() => {
@@ -177,11 +182,13 @@ const ReporteEstadisticas = () => {
         return totales;
     }, [pendientesFiltrados, egresosFiltrados, asignadosFiltrados]);
 
-    // --- NUEVO: CÁLCULO DE LIQUIDACIÓN A PAGAR A IGNA Y JOSE (FIN DE MES) ---
+    // --- CÁLCULO DE LIQUIDACIÓN A PAGAR A IGNA Y JOSE (GLOBAL) ---
     const liquidacionInstructores = useMemo(() => {
         const totales = { IGNA: {}, JOSE: {} };
         
-        asignadosFiltrados.forEach(item => {
+        // Usamos la lista "asignadosParaLiquidacion" que incluye todos los registros
+        // de la fecha/moneda buscada, sin importar si filtras la vista solo a "JOSE"
+        asignadosParaLiquidacion.forEach(item => {
             const montoBase = parseFloat(item.total) || 0;
             const moneda = item.moneda || 'USD';
             
@@ -195,7 +202,7 @@ const ReporteEstadisticas = () => {
         });
 
         return totales;
-    }, [asignadosFiltrados]);
+    }, [asignadosParaLiquidacion]);
 
     // --- ACCIONES ---
     const toggleDetails = (id) => {
@@ -418,43 +425,47 @@ const ReporteEstadisticas = () => {
                 </div>
             )}
 
-            {/* --- PANEL DE LIQUIDACIÓN DE SOCIOS (NUEVO) --- */}
-            <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-xl shadow-lg border border-slate-700 overflow-hidden mb-8">
-                <div className="px-6 py-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/50">
-                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                        💰 Liquidación a Pagar (Fin de Mes)
-                    </h2>
-                    <span className="text-slate-400 text-xs hidden md:block">Calculado sobre ingresos asignados según los filtros activos</span>
-                </div>
-                <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Tarjeta IGNA */}
-                    <div className="bg-slate-700/40 rounded-lg p-5 border border-slate-600/50 shadow-inner">
-                        <h3 className="text-lg font-black text-indigo-400 mb-3 border-b border-slate-600 pb-2">TOTAL IGNA</h3>
-                        <div className="space-y-2">
-                            {Object.entries(liquidacionInstructores.IGNA).map(([moneda, monto]) => (
-                                <div key={moneda} className="flex justify-between items-center">
-                                    <span className="text-slate-300 font-semibold">{moneda}:</span>
-                                    <span className="text-xl font-bold text-white">{formatCurrency(monto)}</span>
-                                </div>
-                            ))}
-                            {Object.keys(liquidacionInstructores.IGNA).length === 0 && <span className="text-slate-500 italic text-sm">No hay montos calculados.</span>}
+            {/* --- PANEL DE LIQUIDACIÓN DE SOCIOS (NUEVO - SE MUESTRA CONDICIONALMENTE) --- */}
+            {filtros.asignadoA !== '' && (
+                <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-xl shadow-lg border border-slate-700 overflow-hidden mb-8 animate-fadeIn">
+                    <div className="px-6 py-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/50">
+                        <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                            💰 Liquidación a Pagar (Fin de Mes)
+                        </h2>
+                        <span className="text-slate-400 text-xs hidden md:block">
+                            Cálculo global de ingresos: Incluye 15%, 12.5% y 10% sin importar a quién se asignó
+                        </span>
+                    </div>
+                    <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Tarjeta IGNA */}
+                        <div className="bg-slate-700/40 rounded-lg p-5 border border-slate-600/50 shadow-inner">
+                            <h3 className="text-lg font-black text-indigo-400 mb-3 border-b border-slate-600 pb-2">TOTAL IGNA</h3>
+                            <div className="space-y-2">
+                                {Object.entries(liquidacionInstructores.IGNA).map(([moneda, monto]) => (
+                                    <div key={moneda} className="flex justify-between items-center">
+                                        <span className="text-slate-300 font-semibold">{moneda}:</span>
+                                        <span className="text-xl font-bold text-white">{formatCurrency(monto)}</span>
+                                    </div>
+                                ))}
+                                {Object.keys(liquidacionInstructores.IGNA).length === 0 && <span className="text-slate-500 italic text-sm">No hay montos calculados.</span>}
+                            </div>
+                        </div>
+                        {/* Tarjeta JOSE */}
+                        <div className="bg-slate-700/40 rounded-lg p-5 border border-slate-600/50 shadow-inner">
+                            <h3 className="text-lg font-black text-emerald-400 mb-3 border-b border-slate-600 pb-2">TOTAL JOSE</h3>
+                            <div className="space-y-2">
+                                {Object.entries(liquidacionInstructores.JOSE).map(([moneda, monto]) => (
+                                    <div key={moneda} className="flex justify-between items-center">
+                                        <span className="text-slate-300 font-semibold">{moneda}:</span>
+                                        <span className="text-xl font-bold text-white">{formatCurrency(monto)}</span>
+                                    </div>
+                                ))}
+                                {Object.keys(liquidacionInstructores.JOSE).length === 0 && <span className="text-slate-500 italic text-sm">No hay montos calculados.</span>}
+                            </div>
                         </div>
                     </div>
-                    {/* Tarjeta JOSE */}
-                    <div className="bg-slate-700/40 rounded-lg p-5 border border-slate-600/50 shadow-inner">
-                        <h3 className="text-lg font-black text-emerald-400 mb-3 border-b border-slate-600 pb-2">TOTAL JOSE</h3>
-                        <div className="space-y-2">
-                            {Object.entries(liquidacionInstructores.JOSE).map(([moneda, monto]) => (
-                                <div key={moneda} className="flex justify-between items-center">
-                                    <span className="text-slate-300 font-semibold">{moneda}:</span>
-                                    <span className="text-xl font-bold text-white">{formatCurrency(monto)}</span>
-                                </div>
-                            ))}
-                            {Object.keys(liquidacionInstructores.JOSE).length === 0 && <span className="text-slate-500 italic text-sm">No hay montos calculados.</span>}
-                        </div>
-                    </div>
                 </div>
-            </div>
+            )}
 
             {/* --- SECCIÓN 1: PENDIENTES --- */}
             <div className="bg-white rounded-xl shadow-md border-l-4 border-yellow-500 overflow-hidden">
@@ -560,6 +571,7 @@ const ReporteEstadisticas = () => {
                                         </div>
                                         <div className="text-sm text-gray-500 mt-1 pl-0 md:pl-28">{item.actividad}</div>
                                         
+                                        {/* AQUI MOSTRAMOS LOS PORCENTAJES DE IGNA Y JOSE EN VIVO */}
                                         <div className="pl-0 md:pl-28">
                                             {renderRepartoDesglose(item)}
                                         </div>
