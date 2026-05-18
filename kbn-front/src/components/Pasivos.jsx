@@ -35,15 +35,19 @@ const Pasivos = ({ axiosConfig, setView }) => {
   };
 
   // ---------------------------------------------
-  // MOTOR DE CÁLCULO DEFINITIVO
+  // MOTOR DE CÁLCULO DEFINITIVO BLINDADO
   // ---------------------------------------------
-  // Como el backend ignora las listas hijas en los PUT, acumulamos las Deudas manuales 
-  // en el montoTotal base, y dejamos que el backend sume los Adelantos en el historial.
   const getBalanceReal = (pasivo) => {
+    // Forzamos parseFloat porque el backend a veces devuelve Strings (ej: "100")
     const base = parseFloat(pasivo.montoTotal) || 0;
-    const sumaHistorial = (pasivo.historialPagos || []).reduce((acc, mov) => acc + parseFloat(mov.montoPagado), 0);
     
-    // El balance real y definitivo es la suma matemática de la base (deudas) + historial (adelantos)
+    const sumaHistorial = (pasivo.historialPagos || []).reduce((acc, mov) => {
+        // El historial de pagos también lo blindamos con parseFloat por seguridad
+        const montoMovimiento = parseFloat(mov.montoPagado) || 0;
+        return acc + montoMovimiento;
+    }, 0);
+    
+    // Balance final matemático: Deudas (negativas) + Adelantos/Pagos (positivos)
     return base + sumaHistorial;
   };
 
@@ -52,8 +56,7 @@ const Pasivos = ({ axiosConfig, setView }) => {
     try {
       const montoInicial = parseFloat(newPasivo.montoTotal) || 0;
       
-      // Si es Deuda, impacta directamente como negativo en el monto base.
-      // Si es Adelanto, el monto base arranca en 0 porque el egreso se encargará de crear el historial.
+      // Si es DEUDA va al monto base negativo. Si es ADELANTO arranca en 0 porque lo crea el egreso de caja.
       const montoCalculado = newPasivo.tipoRegistro === 'DEUDA' ? -Math.abs(montoInicial) : 0;
       
       const payload = { 
@@ -68,7 +71,7 @@ const Pasivos = ({ axiosConfig, setView }) => {
         const egresoPayload = {
           tipoTransaccion: 'EGRESO',
           pasivoId: res.data.id,
-          total: Math.abs(montoInicial), // Usamos el monto que tipeó el usuario
+          total: Math.abs(montoInicial), 
           fecha: newPasivo.fecha,
           moneda: newPasivo.moneda,
           formaPago: 'Efectivo',
@@ -81,7 +84,7 @@ const Pasivos = ({ axiosConfig, setView }) => {
       
       setShowCreateModal(false);
       setNewPasivo(initialPasivoForm);
-      setTimeout(() => fetchPasivos(), 800); 
+      setTimeout(() => fetchPasivos(), 1000); 
     } catch (err) {
       alert("Error al guardar.");
     }
@@ -93,11 +96,11 @@ const Pasivos = ({ axiosConfig, setView }) => {
       const montoMovimiento = parseFloat(transactionData.monto);
 
       if (transactionType === 'ADELANTO') {
-        // Enviar a caja. El backend genera automáticamente el movimiento en historialPagos.
+        // Registramos el egreso en la caja (esto impacta en el historial del backend de manera automática)
         const payloadEgreso = {
           tipoTransaccion: 'EGRESO',
           pasivoId: selectedPasivo.id,
-          total: montoMovimiento,
+          total: montoMovimiento, 
           fecha: transactionData.fecha,
           moneda: selectedPasivo.moneda,
           formaPago: transactionData.formaPago,
@@ -108,9 +111,9 @@ const Pasivos = ({ axiosConfig, setView }) => {
         await axios.post('https://kbnadmin-production.up.railway.app/api/clases/guardar', payloadEgreso, axiosConfig);
         
       } else {
-        // ES DEUDA: Modificamos el montoTotal base (porque el backend ignora arrays en el PUT)
+        // ES DEUDA: Modificamos directamente el montoTotal acumulado (base)
         const montoActual = parseFloat(selectedPasivo.montoTotal) || 0;
-        const montoAAgregar = -Math.abs(montoMovimiento); // Las deudas SIEMPRE restan matemáticamente
+        const montoAAgregar = -Math.abs(montoMovimiento); 
         const nuevoMontoTotal = montoActual + montoAAgregar;
 
         await axios.put(`https://kbnadmin-production.up.railway.app/api/pasivos/${selectedPasivo.id}`, {
@@ -121,8 +124,13 @@ const Pasivos = ({ axiosConfig, setView }) => {
 
       setShowTransactionModal(false);
       setTransactionData(initialTransactionForm);
-      setTimeout(() => fetchPasivos(), 800);
-      alert('Operación realizada con éxito.');
+      
+      // Le damos 1 segundo al backend para que registre bien el movimiento antes de refrescar la vista
+      setTimeout(() => {
+          fetchPasivos();
+          alert('Operación realizada con éxito.');
+      }, 1000);
+
     } catch (err) {
       alert("Error en la transacción.");
     }
@@ -245,7 +253,7 @@ const Pasivos = ({ axiosConfig, setView }) => {
                 <label className="text-[10px] font-black text-gray-400 uppercase ml-2">Descripción / Nota</label>
                 <input 
                   type="text" 
-                  placeholder="Ej: Pago por clases o detalle..." 
+                  placeholder="Ej: Detalles iniciales..." 
                   className="w-full p-4 bg-gray-50 rounded-2xl border-none font-bold outline-none" 
                   value={newPasivo.descripcion} 
                   onChange={e => setNewPasivo({...newPasivo, descripcion: e.target.value})} 
@@ -256,7 +264,7 @@ const Pasivos = ({ axiosConfig, setView }) => {
                 <input 
                   type="number" 
                   step="0.01" 
-                  placeholder="Ej: 500" 
+                  placeholder="Monto Inicial" 
                   className="p-4 bg-gray-50 rounded-2xl border-none font-bold outline-none" 
                   value={newPasivo.montoTotal} 
                   onChange={e => setNewPasivo({...newPasivo, montoTotal: e.target.value})} 
@@ -301,7 +309,7 @@ const Pasivos = ({ axiosConfig, setView }) => {
                   </select>
                 )}
               </div>
-              <input type="text" placeholder="Concepto (Ej: 5hs clase Facu)" className="w-full p-4 bg-gray-50 rounded-2xl border-none font-bold outline-none" value={transactionData.detalles} onChange={e => setTransactionData({...transactionData, detalles: e.target.value})} required />
+              <input type="text" placeholder="Concepto (Ej: Pago de clases)" className="w-full p-4 bg-gray-50 rounded-2xl border-none font-bold outline-none" value={transactionData.detalles} onChange={e => setTransactionData({...transactionData, detalles: e.target.value})} required />
 
               <div className="flex gap-3 pt-6">
                 <button type="button" onClick={() => setShowTransactionModal(false)} className="flex-1 font-black uppercase text-xs text-gray-400">Cancelar</button>
@@ -339,35 +347,34 @@ const Pasivos = ({ axiosConfig, setView }) => {
 
       {/* MODAL HISTORIAL */}
       {showHistoryModal && selectedPasivo && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4 text-gray-800">
           <div className="bg-white w-full max-w-lg rounded-[3rem] p-10 shadow-2xl">
             <div className="flex justify-between items-center mb-8">
-              <h2 className="font-black uppercase text-xl italic text-gray-800">Pagos / Adelantos</h2>
+              <h2 className="font-black uppercase text-xl italic text-gray-800">Historial de Caja: {selectedPasivo.titulo}</h2>
               <button onClick={() => setShowHistoryModal(false)} className="text-2xl hover:scale-110 transition-transform">✕</button>
             </div>
-            
-            <p className="text-xs text-gray-500 font-bold mb-4 italic text-center">
-              *Nota: Este historial muestra los movimientos de Caja (Adelantos). Las deudas se aplican directamente al saldo general.
-            </p>
 
             <div className="space-y-3 max-h-80 overflow-y-auto pr-2 mb-8">
               {selectedPasivo.historialPagos?.length > 0 ? (
-                [...selectedPasivo.historialPagos].reverse().map((mov, idx) => (
-                  <div key={idx} className={`bg-gray-50 p-5 rounded-3xl flex justify-between items-center border-l-8 ${mov.montoPagado > 0 ? 'border-emerald-500' : 'border-rose-500'}`}>
-                    <div>
-                      <p className="text-[10px] font-black text-gray-400 uppercase">{mov.fecha}</p>
-                      <p className="text-sm font-black text-gray-700">{mov.nota}</p>
+                [...selectedPasivo.historialPagos].reverse().map((mov, idx) => {
+                  const montoMov = parseFloat(mov.montoPagado) || 0;
+                  return (
+                    <div key={idx} className={`bg-gray-50 p-5 rounded-3xl flex justify-between items-center border-l-8 ${montoMov > 0 ? 'border-emerald-500' : 'border-rose-500'}`}>
+                      <div>
+                        <p className="text-[10px] font-black text-gray-400 uppercase">{mov.fecha}</p>
+                        <p className="text-sm font-black text-gray-700">{mov.nota}</p>
+                      </div>
+                      <span className={`font-black text-lg ${montoMov > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {montoMov > 0 ? `+ ${montoMov.toFixed(2)}` : `- ${Math.abs(montoMov).toFixed(2)}`}
+                      </span>
                     </div>
-                    <span className={`font-black text-lg ${mov.montoPagado > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        {mov.montoPagado > 0 ? `+ ${mov.montoPagado}` : `- ${Math.abs(mov.montoPagado)}`}
-                    </span>
-                  </div>
-                ))
+                  );
+                })
               ) : (
-                <div className="text-center py-10 text-gray-400 font-bold italic">Sin movimientos registrados en Caja.</div>
+                <div className="text-center py-10 text-gray-400 font-bold italic">Sin movimientos de caja registrados.</div>
               )}
             </div>
-            <button onClick={() => setShowHistoryModal(false)} className="w-full bg-gray-900 text-white py-4 rounded-2xl font-black uppercase text-xs transition-all hover:bg-black">Cerrar Historial</button>
+            <button onClick={() => setShowHistoryModal(false)} className="w-full bg-gray-900 text-white py-4 rounded-2xl font-black uppercase text-xs transition-all hover:bg-black">Cerrar</button>
           </div>
         </div>
       )}
