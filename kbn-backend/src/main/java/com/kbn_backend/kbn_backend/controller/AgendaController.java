@@ -4,7 +4,6 @@ import com.kbn_backend.kbn_backend.model.Agenda;
 import com.kbn_backend.kbn_backend.model.Usuario;
 import com.kbn_backend.kbn_backend.repository.AgendaRepository;
 import com.kbn_backend.kbn_backend.repository.UsuarioRepository;
-import com.kbn_backend.kbn_backend.service.WhatsAppService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -23,8 +22,6 @@ public class AgendaController {
     @Autowired
     private UsuarioRepository usuarioRepository;
 
-    @Autowired
-    private WhatsAppService whatsAppService; // ← NUEVO
 
     // 1. Crear nueva cita (Secretaria)
     @PostMapping("/crear")
@@ -42,10 +39,6 @@ public class AgendaController {
 
             Agenda nuevaAgenda = agendaRepository.save(agenda);
 
-            // ─── Notificación WhatsApp ──────────────────────────────────────
-            // Se ejecuta después de guardar. Si falla, no rompe el flujo.
-            whatsAppService.notificarNuevaClase(instructor, nuevaAgenda);
-            // ───────────────────────────────────────────────────────────────
 
             return ResponseEntity.ok(nuevaAgenda);
 
