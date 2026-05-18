@@ -14,7 +14,6 @@ const Pasivos = ({ axiosConfig, setView }) => {
 
   const today = new Date().toISOString().split('T')[0];
 
-  // Agregamos tipoRegistro por defecto para que no sea undefined al crear
   const initialPasivoForm = { titulo: '', descripcion: '', montoTotal: '', moneda: 'BRL', fecha: today, tipoRegistro: 'DEUDA' };
   const [newPasivo, setNewPasivo] = useState(initialPasivoForm);
   const [editPasivo, setEditPasivo] = useState(initialPasivoForm);
@@ -35,16 +34,6 @@ const Pasivos = ({ axiosConfig, setView }) => {
     }
   };
 
-  // ---------------------------------------------
-  // FUNCIÓN CLAVE: Calcular saldo real sumando el historial
-  // ---------------------------------------------
-  const getBalanceReal = (pasivo) => {
-    if (pasivo.historialPagos && pasivo.historialPagos.length > 0) {
-      return pasivo.historialPagos.reduce((acc, mov) => acc + parseFloat(mov.montoPagado), 0);
-    }
-    return parseFloat(pasivo.montoTotal) || 0;
-  };
-
   const handleCreatePasivo = async (e) => {
     e.preventDefault();
     try {
@@ -57,10 +46,9 @@ const Pasivos = ({ axiosConfig, setView }) => {
           historialPagos: [] 
       };
 
-      // Si es Deuda, inyectamos el historial acá porque NO pasa por la caja (clases/guardar)
       if (newPasivo.tipoRegistro === 'DEUDA') {
           payload.historialPagos.push({
-              montoPagado: montoCalculado, // Valor negativo
+              montoPagado: montoCalculado, 
               fecha: newPasivo.fecha,
               nota: `Deuda inicial: ${newPasivo.descripcion || newPasivo.titulo}`
           });
@@ -68,7 +56,6 @@ const Pasivos = ({ axiosConfig, setView }) => {
 
       const res = await axios.post('https://kbnadmin-production.up.railway.app/api/pasivos', payload, axiosConfig);
       
-      // Si es Adelanto, disparamos el Egreso (y el backend automáticamente creará el historial)
       if (newPasivo.tipoRegistro === 'ADELANTO') {
         const egresoPayload = {
           tipoTransaccion: 'EGRESO',
@@ -98,7 +85,6 @@ const Pasivos = ({ axiosConfig, setView }) => {
       const montoMovimiento = parseFloat(transactionData.monto);
 
       if (transactionType === 'ADELANTO') {
-        // Registrar el Egreso en Caja
         const payloadEgreso = {
           tipoTransaccion: 'EGRESO',
           pasivoId: selectedPasivo.id,
@@ -110,21 +96,20 @@ const Pasivos = ({ axiosConfig, setView }) => {
           actividad: 'Pago Pasivo',
           instructor: 'Secretaria'
         };
-        // Hacemos el POST a caja, el backend genera el PagoPasivo automáticamente. No hacemos PUT para no duplicar.
         await axios.post('https://kbnadmin-production.up.railway.app/api/clases/guardar', payloadEgreso, axiosConfig);
         
       } else {
-        // ES DEUDA: Actualizamos el historial y el saldo con un PUT manual
+        // CORRECCIÓN PROFESIONAL: El nuevo saldo se calcula directo sobre el montoTotal actual de la DB
+        const montoAAgregar = -Math.abs(montoMovimiento); 
+        const saldoActualDB = parseFloat(selectedPasivo.montoTotal) || 0;
+        const nuevoSaldo = saldoActualDB + montoAAgregar;
+
         const nuevoHistorial = [...(selectedPasivo.historialPagos || [])];
-        const montoAAgregar = -Math.abs(montoMovimiento); // Negativo
-        
         nuevoHistorial.push({
             montoPagado: montoAAgregar, 
             fecha: transactionData.fecha,
             nota: `DEUDA: ${transactionData.detalles}`
         });
-
-        const nuevoSaldo = nuevoHistorial.reduce((acc, mov) => acc + parseFloat(mov.montoPagado), 0);
 
         await axios.put(`https://kbnadmin-production.up.railway.app/api/pasivos/${selectedPasivo.id}`, {
             ...selectedPasivo,
@@ -135,7 +120,6 @@ const Pasivos = ({ axiosConfig, setView }) => {
 
       setShowTransactionModal(false);
       setTransactionData(initialTransactionForm);
-      // Esperamos medio segundo para asegurar que el backend de caja terminó de guardar el historial
       setTimeout(() => fetchPasivos(), 500);
       alert('Operación realizada con éxito.');
     } catch (err) {
@@ -184,8 +168,8 @@ const Pasivos = ({ axiosConfig, setView }) => {
       {/* GRID DE TARJETAS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {pasivos.map(p => {
-            // USAMOS EL BALANCE REAL CALCULADO DESDE EL HISTORIAL
-            const balance = getBalanceReal(p);
+            // CORRECCIÓN: Usamos directo la propiedad del objeto devuelto por la DB
+            const balance = parseFloat(p.montoTotal) || 0;
             const isNegative = balance <= -0.01;
             const isPositive = balance >= 0.01;
 
