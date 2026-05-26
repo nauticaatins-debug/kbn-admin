@@ -1,10 +1,110 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 
-const Ingreso = ({ formData, handleChange, handleSubmit, InstructorField, setView }) => {
+// ─────────────────────────────────────────────────────────────────
+// Helper para leer la tarifa del instructor desde el campo descripcion
+// Mismo formato que Pasivos.jsx: "__tarifa__:120||Descripción"
+// ─────────────────────────────────────────────────────────────────
+const TARIFA_PREFIX = '__tarifa__:';
+
+const decodeTarifa = (descripcionRaw) => {
+  if (!descripcionRaw || !descripcionRaw.startsWith(TARIFA_PREFIX)) {
+    return { tarifaHora: null, esInstructor: false };
+  }
+  const sin = descripcionRaw.slice(TARIFA_PREFIX.length);
+  const sep = sin.indexOf('||');
+  const tarifaHora = parseFloat(sin.slice(0, sep));
+  return { tarifaHora, esInstructor: true };
+};
+
+const Ingreso = ({ formData, handleChange, handleSubmit: originalHandleSubmit, InstructorField, setView, axiosConfig }) => {
+
+  // ── Pasivos disponibles (para vincular instructores) ──────────
+  const [pasivos, setPasivos] = useState([]);
+  const [pasivoVinculado, setPasivoVinculado] = useState(null); // pasivo del instructor detectado
+  const [deudaCalculada, setDeudaCalculada] = useState(0);
+
+  useEffect(() => {
+    fetchPasivos();
+  }, []);
+
+  const fetchPasivos = async () => {
+    try {
+      const res = await axios.get('https://kbnadmin-production.up.railway.app/api/pasivos', axiosConfig);
+      setPasivos(res.data);
+    } catch (err) {
+      console.error('No se pudieron cargar los pasivos', err);
+    }
+  };
+
+  // ── Detectar instructor cuando cambia formData.instructor o formData.horas ──
+  useEffect(() => {
+    if (!formData.instructor || pasivos.length === 0) {
+      setPasivoVinculado(null);
+      setDeudaCalculada(0);
+      return;
+    }
+
+    // Buscar pasivo cuyo titulo coincida con el nombre del instructor (case-insensitive)
+    const match = pasivos.find((p) => {
+      const decoded = decodeTarifa(p.descripcion);
+      return decoded.esInstructor && p.titulo.toLowerCase() === formData.instructor.toLowerCase();
+    });
+
+    if (match) {
+      const { tarifaHora } = decodeTarifa(match.descripcion);
+      const horas = parseFloat(formData.horas) || 0;
+      const deuda = Math.round(tarifaHora * horas * 100) / 100;
+      setPasivoVinculado(match);
+      setDeudaCalculada(deuda);
+    } else {
+      setPasivoVinculado(null);
+      setDeudaCalculada(0);
+    }
+  }, [formData.instructor, formData.horas, pasivos]);
+
+  // ── Submit: guardar clase + acumular deuda al pasivo del instructor ──
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    // 1. Guardar el ingreso normalmente
+    await originalHandleSubmit(e);
+
+    // 2. Si hay un pasivo vinculado y hay deuda calculada, registrar NUEVA_DEUDA
+    if (pasivoVinculado && deudaCalculada > 0) {
+      try {
+        const montoActual = parseFloat(pasivoVinculado.montoTotal) || 0;
+        const horas = parseFloat(formData.horas) || 0;
+        const { tarifaHora } = decodeTarifa(pasivoVinculado.descripcion);
+
+        await axios.put(
+          `https://kbnadmin-production.up.railway.app/api/pasivos/${pasivoVinculado.id}`,
+          {
+            ...pasivoVinculado,
+            montoTotal: montoActual - Math.abs(deudaCalculada),
+            // Agregar entrada al historial
+            historialPagos: [
+              ...(pasivoVinculado.historialPagos || []),
+              {
+                montoPagado: -deudaCalculada,
+                fecha: formData.fecha,
+                nota: `Clase ${formData.actividad || ''} · ${horas}h × ${tarifaHora} BRL/h`,
+              },
+            ],
+          },
+          axiosConfig
+        );
+      } catch (err) {
+        console.error('Error al acumular deuda al instructor:', err);
+        alert(`⚠️ El ingreso se guardó, pero no se pudo acumular la deuda a ${pasivoVinculado.titulo}. Revisá manualmente en Cuentas Corrientes.`);
+      }
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto bg-white p-8 rounded-lg shadow-md mt-10">
-      {/* Botón Volver Simple */}
-      <button 
+      {/* Botón Volver */}
+      <button
         onClick={() => setView('AGENDA')}
         className="mb-4 text-xs font-bold text-gray-400 hover:text-indigo-600 transition-colors uppercase tracking-widest"
       >
@@ -14,12 +114,43 @@ const Ingreso = ({ formData, handleChange, handleSubmit, InstructorField, setVie
       <h2 className="text-2xl font-bold mb-6 text-green-600">💰 Nueva Planilla de Ingreso</h2>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        
-        {/* Campo Instructor: Renderizado con estilo estándar de formulario */}
+
+        {/* Campo Instructor */}
         <div className="space-y-1">
           <InstructorField />
         </div>
 
+        {/* Banner de instructor vinculado ─────────────────────── */}
+        {pasivoVinculado && (
+          <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 flex items-start gap-3">
+            <span className="text-2xl">🎓</span>
+            <div>
+              <p className="text-xs font-black text-indigo-700 uppercase">Instructor vinculado a cuenta corriente</p>
+              <p className="text-[11px] text-indigo-500 font-bold mt-0.5">
+                {pasivoVinculado.titulo} · {decodeTarifa(pasivoVinculado.descripcion).tarifaHora} BRL/h
+              </p>
+              {deudaCalculada > 0 && (
+                <p className="text-sm font-black text-indigo-800 mt-1">
+                  Se acumularán <span className="text-rose-600">{deudaCalculada.toFixed(2)} BRL</span> al guardar
+                  ({parseFloat(formData.horas) || 0}h × {decodeTarifa(pasivoVinculado.descripcion).tarifaHora} BRL/h)
+                </p>
+              )}
+              {(!formData.horas || parseFloat(formData.horas) === 0) && (
+                <p className="text-[11px] text-amber-600 font-bold mt-1">⚠️ Ingresá las horas para calcular la deuda.</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Sin coincidencia pero hay instructor escrito */}
+        {!pasivoVinculado && formData.instructor && formData.instructor !== 'Secretaria' && (
+          <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 text-[11px] text-gray-400 font-bold">
+            ℹ️ <span className="text-gray-600">{formData.instructor}</span> no tiene cuenta corriente vinculada.
+            Creala en <span className="text-indigo-600">Cuentas Corrientes → 🎓 Instructor</span> para acumular deuda automáticamente.
+          </div>
+        )}
+
+        {/* Fecha */}
         <div>
           <label className="block text-sm font-medium text-gray-700">Fecha</label>
           <input
@@ -51,12 +182,9 @@ const Ingreso = ({ formData, handleChange, handleSubmit, InstructorField, setVie
               <option value="Otro">Otro...</option>
             </select>
           </div>
-
           {formData.actividad === 'Otro' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700">
-                Especificar actividad
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Especificar actividad</label>
               <input
                 type="text"
                 name="actividadOtro"
@@ -171,7 +299,7 @@ const Ingreso = ({ formData, handleChange, handleSubmit, InstructorField, setVie
           </div>
         </div>
 
-        {/* Pago */}
+        {/* Forma de Pago */}
         <div>
           <label className="block text-sm font-medium text-gray-700">Forma de Pago</label>
           <select
@@ -198,6 +326,17 @@ const Ingreso = ({ formData, handleChange, handleSubmit, InstructorField, setVie
             />
           )}
         </div>
+
+        {/* Resumen de deuda antes de guardar */}
+        {pasivoVinculado && deudaCalculada > 0 && (
+          <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4">
+            <p className="text-xs font-black text-rose-700 uppercase mb-1">Resumen al guardar</p>
+            <p className="text-[11px] text-rose-500 font-bold">
+              ✅ Se registra el ingreso normalmente.<br />
+              📋 Se suma <strong>{deudaCalculada.toFixed(2)} BRL</strong> a la cuenta de <strong>{pasivoVinculado.titulo}</strong> (deuda a pagar).
+            </p>
+          </div>
+        )}
 
         <button
           type="submit"
