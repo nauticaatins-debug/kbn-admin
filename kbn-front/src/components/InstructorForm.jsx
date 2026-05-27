@@ -221,23 +221,24 @@ const InstructorForm = () => {
           const deuda = Math.round(tarifaHora * horas * 100) / 100;
 
           if (deuda > 0) {
-            const montoActual = parseFloat(pasivoInstructor.montoTotal) || 0;
             const detalles = formData.detalles ? ` — ${formData.detalles}` : '';
             const nota = `Pago por ${horas}h de ${actividad}${detalles} · ${horas}h × ${tarifaHora} BRL/h = ${deuda.toFixed(2)} BRL`;
 
-            await axios.put(
-              `https://kbnadmin-production.up.railway.app/api/pasivos/${pasivoInstructor.id}`,
+            // Usamos /api/clases/guardar con EGRESO y total negativo
+            // para que FinanzasService reste el saldo Y registre el historial
+            await axios.post(
+              'https://kbnadmin-production.up.railway.app/api/clases/guardar',
               {
-                ...pasivoInstructor,
-                montoTotal: montoActual - deuda,
-                historialPagos: [
-                  ...(pasivoInstructor.historialPagos || []),
-                  {
-                    montoPagado: -deuda,
-                    fecha: formData.fecha,
-                    nota,
-                  },
-                ],
+                tipoTransaccion: 'EGRESO',
+                tipoMovimientoPasivo: 'NUEVA_DEUDA',
+                pasivoId: pasivoInstructor.id,
+                total: String(-deuda),
+                fecha: formData.fecha,
+                moneda: pasivoInstructor.moneda,
+                formaPago: 'Efectivo',
+                detalles: nota,
+                actividad: 'Pago Pasivo',
+                instructor: formData.instructor,
               },
               axiosConfig
             );

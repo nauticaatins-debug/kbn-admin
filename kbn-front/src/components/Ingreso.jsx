@@ -58,33 +58,26 @@ const Ingreso = ({ formData, handleChange, handleSubmit: originalHandleSubmit, I
     if (!pasivoVinculado || deudaCalculada <= 0 || !axiosConfig) return;
 
     try {
-      // Fetch fresco para tener el historial actualizado
-      const resActual = await axios.get(
-        `https://kbnadmin-production.up.railway.app/api/pasivos`,
-        axiosConfig
-      );
-      const pasivoActual = resActual.data.find(p => p.id === pasivoVinculado.id);
-      if (!pasivoActual) return;
-
-      const { tarifaHora } = decodeTarifa(pasivoActual.descripcion);
+      const { tarifaHora } = decodeTarifa(pasivoVinculado.descripcion);
       const horas = parseFloat(formData.horas) || 0;
       const actividad = formData.actividad === 'Otro' ? formData.actividadOtro : formData.actividad;
       const detalles = formData.detalles ? ` — ${formData.detalles}` : '';
       const nota = `Pago por ${horas}h de ${actividad}${detalles} · ${horas}h × ${tarifaHora} BRL/h = ${deudaCalculada.toFixed(2)} BRL`;
 
-      await axios.put(
-        `https://kbnadmin-production.up.railway.app/api/pasivos/${pasivoActual.id}`,
+      // EGRESO con total negativo → FinanzasService resta el saldo Y registra el historial
+      await axios.post(
+        'https://kbnadmin-production.up.railway.app/api/clases/guardar',
         {
-          ...pasivoActual,
-          montoTotal: (parseFloat(pasivoActual.montoTotal) || 0) - deudaCalculada,
-          historialPagos: [
-            ...(pasivoActual.historialPagos || []),
-            {
-              montoPagado: -deudaCalculada,
-              fecha: formData.fecha,
-              nota,
-            },
-          ],
+          tipoTransaccion: 'EGRESO',
+          tipoMovimientoPasivo: 'NUEVA_DEUDA',
+          pasivoId: pasivoVinculado.id,
+          total: String(-deudaCalculada),
+          fecha: formData.fecha,
+          moneda: pasivoVinculado.moneda,
+          formaPago: 'Efectivo',
+          detalles: nota,
+          actividad: 'Pago Pasivo',
+          instructor: formData.instructor,
         },
         axiosConfig
       );
