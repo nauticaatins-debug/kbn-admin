@@ -306,36 +306,6 @@ const InstructorForm = () => {
           />
         )}
 
-        {/* Banner: instructor vinculado */}
-        {view === 'INGRESO' && pasivoVinculado && (
-          <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 flex items-start gap-3">
-            <span className="text-lg">🎓</span>
-            <div>
-              <p className="text-xs font-black text-indigo-700 uppercase">Cuenta corriente vinculada</p>
-              <p className="text-[11px] text-indigo-500 font-bold">
-                Tarifa: {decodeTarifa(pasivoVinculado.descripcion).tarifaHora} BRL/h
-              </p>
-              {horas > 0 ? (
-                <p className="text-xs font-black text-rose-600 mt-0.5">
-                  Se acumularán {deudaPreview.toFixed(2)} BRL al guardar
-                  <span className="text-indigo-400 font-bold"> ({horas}h × {decodeTarifa(pasivoVinculado.descripcion).tarifaHora} BRL/h)</span>
-                </p>
-              ) : (
-                <p className="text-[11px] text-amber-500 font-bold mt-0.5">
-                  ⚠️ Ingresá las horas para ver el monto a acumular
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Aviso: sin cuenta corriente */}
-        {view === 'INGRESO' && !pasivoVinculado && formData.instructor && formData.instructor !== 'Secretaria' && (
-          <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-[11px] text-gray-400 font-bold">
-            ℹ️ <span className="text-gray-600">{formData.instructor}</span> no tiene cuenta corriente.
-            Creala en <span className="text-indigo-500">Cuentas Corrientes → 🎓 Instructor</span>.
-          </div>
-        )}
       </div>
     );
   };
