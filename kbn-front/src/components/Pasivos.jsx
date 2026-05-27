@@ -127,7 +127,18 @@ const Pasivos = ({ axiosConfig, setView }) => {
         const montoActual = parseFloat(selectedPasivo.montoTotal) || 0;
         await axios.put(
           `https://kbnadmin-production.up.railway.app/api/pasivos/${selectedPasivo.id}`,
-          { ...selectedPasivo, montoTotal: montoActual - Math.abs(monto) },
+          {
+            ...selectedPasivo,
+            montoTotal: montoActual - Math.abs(monto),
+            historialPagos: [
+              ...(selectedPasivo.historialPagos || []),
+              {
+                montoPagado: -Math.abs(monto),
+                fecha: transactionData.fecha,
+                nota: transactionData.detalles || `Nueva deuda: ${selectedPasivo.titulo}`,
+              },
+            ],
+          },
           axiosConfig
         );
       } else {
