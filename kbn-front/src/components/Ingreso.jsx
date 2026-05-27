@@ -119,14 +119,6 @@ const Ingreso = ({ formData, handleChange, handleSubmit: originalHandleSubmit, I
           </div>
         )}
 
-        {/* Aviso sin cuenta corriente */}
-        {!pasivoVinculado && formData.instructor && formData.instructor !== 'Secretaria' && (
-          <div className="bg-gray-50 border border-gray-200 rounded-2xl p-3 text-[11px] text-gray-400 font-bold">
-            ℹ️ <span className="text-gray-600">{formData.instructor}</span> no tiene cuenta corriente vinculada.
-            Creala en <span className="text-indigo-600">Cuentas Corrientes → 🎓 Instructor</span>.
-          </div>
-        )}
-
         <div>
           <label className="block text-sm font-medium text-gray-700">Fecha</label>
           <input
