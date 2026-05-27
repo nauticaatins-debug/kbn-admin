@@ -83,7 +83,7 @@ const Ingreso = ({ formData, handleChange, handleSubmit: originalHandleSubmit, I
       );
     } catch (err) {
       console.error('Error al acumular deuda:', err);
-      alert(`⚠️ El ingreso se guardó pero no se pudo acumular la deuda a ${pasivoVinculado.titulo}. Revisá manualmente en Cuentas Corrientes.`);
+      alert(`⚠️ El ingreso se guardó pero no se pudo acumular a ${pasivoVinculado.titulo}. Revisá manualmente en Cuentas Corrientes.`);
     }
   };
 
