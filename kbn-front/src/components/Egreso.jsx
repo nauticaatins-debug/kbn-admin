@@ -16,12 +16,6 @@ const Egreso = ({ formData, handleChange, handleSubmit, InstructorField, setView
 
   return (
     <div className="max-w-2xl mx-auto bg-white p-8 rounded-lg shadow-md mt-10">
-      <button 
-        onClick={() => setView('AGENDA')}
-        className="mb-4 text-xs font-bold text-gray-400 hover:text-red-600 transition-colors uppercase tracking-widest"
-      >
-        ← Volver a Agenda
-      </button>
 
       <h2 className="text-2xl font-bold mb-6 text-red-600 italic uppercase tracking-tighter">💸 Registro de Egreso</h2>
 
