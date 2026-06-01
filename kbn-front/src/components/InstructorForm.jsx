@@ -6,7 +6,7 @@ import Ingreso from './Ingreso';
 import Egreso from './Egreso';
 import Agenda from './Agenda';
 import Estadisticas from './Estadisticas';
-import NotificationBanner from './components/NotificationBanner'
+import NotificationBanner from './NotificationBanner'
 
 const TARIFA_PREFIX = '__tarifa__:';
 
