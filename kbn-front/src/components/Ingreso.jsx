@@ -231,6 +231,16 @@ const Ingreso = ({ formData, handleChange, handleSubmit: originalHandleSubmit, I
               onChange={handleChange}
               className="mt-1 block w-full rounded-md border p-2 border-gray-300 text-sm focus:border-green-500 focus:ring-green-500"
             >
+              {/* ── Nuevas monedas ── */}
+              <option value="R$_STONE_JOSE">R$ Stone José</option>
+              <option value="R$_STONE_IGNA">R$ Stone Igna</option>
+              <option value="R$_EFECTIVO">R$ Efectivo</option>
+              <option value="USD_EFECTIVO">USD Efectivo</option>
+              <option value="USD_MARIANA">USD Mariana</option>
+              <option value="EUR_WIZE_IGNA">€ Wize Igna</option>
+              {/* ── Separador ── */}
+              <option disabled>──────────────</option>
+              {/* ── Monedas originales ── */}
               <option value="BRL">Reales (BRL)</option>
               <option value="USD">Dólares (USD)</option>
               <option value="EUR">Euros (EUR)</option>
