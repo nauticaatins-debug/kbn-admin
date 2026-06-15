@@ -48,47 +48,91 @@ const Ingreso = ({ formData, handleChange, handleSubmit: originalHandleSubmit, I
     }
   }, [formData.instructor, formData.horas, pasivos]);
 
+  const HANS_PASIVO_TITULO = 'Hans Wurbs';
+  const HANS_PCT = 5;
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     // 1. Guardar el ingreso normalmente
     await originalHandleSubmit(e);
 
-    // 2. Acumular deuda al pasivo del instructor si corresponde
-    if (!pasivoVinculado || deudaCalculada <= 0 || !axiosConfig) return;
+    const actividad = formData.actividad === 'Otro' ? formData.actividadOtro : formData.actividad;
+    const total = parseFloat(formData.total) || 0;
 
-    try {
-      const { tarifaHora } = decodeTarifa(pasivoVinculado.descripcion);
-      const horas = parseFloat(formData.horas) || 0;
-      const actividad = formData.actividad === 'Otro' ? formData.actividadOtro : formData.actividad;
-      const detalles = formData.detalles ? ` — ${formData.detalles}` : '';
-      const nota = `Pago por ${horas}h de ${actividad}${detalles} · ${horas}h × ${tarifaHora} BRL/h = ${deudaCalculada.toFixed(2)} BRL`;
+    // 2. Acumular deuda al pasivo del instructor (por horas trabajadas)
+    if (pasivoVinculado && deudaCalculada > 0 && axiosConfig) {
+      try {
+        const { tarifaHora } = decodeTarifa(pasivoVinculado.descripcion);
+        const horas = parseFloat(formData.horas) || 0;
+        const detalles = formData.detalles ? ` — ${formData.detalles}` : '';
+        const nota = `Pago por ${horas}h de ${actividad}${detalles} · ${horas}h × ${tarifaHora} BRL/h = ${deudaCalculada.toFixed(2)} BRL`;
+        await axios.post(
+          'https://kbnadmin-production.up.railway.app/api/clases/guardar',
+          {
+            tipoTransaccion: 'EGRESO',
+            tipoMovimientoPasivo: 'NUEVA_DEUDA',
+            pasivoId: pasivoVinculado.id,
+            total: String(-deudaCalculada),
+            fecha: formData.fecha,
+            moneda: pasivoVinculado.moneda,
+            formaPago: 'Efectivo',
+            detalles: nota,
+            actividad: 'Pago Pasivo',
+            instructor: formData.instructor,
+          },
+          axiosConfig
+        );
+      } catch (err) {
+        console.error('Error al acumular deuda instructor:', err);
+        alert(`⚠️ El ingreso se guardó pero no se pudo acumular a ${pasivoVinculado.titulo}. Revisá en Cuentas Corrientes.`);
+      }
+    }
 
-      // EGRESO con total negativo → FinanzasService resta el saldo Y registra el historial
-      await axios.post(
-        'https://kbnadmin-production.up.railway.app/api/clases/guardar',
-        {
-          tipoTransaccion: 'EGRESO',
-          tipoMovimientoPasivo: 'NUEVA_DEUDA',
-          pasivoId: pasivoVinculado.id,
-          total: String(-deudaCalculada),
-          fecha: formData.fecha,
-          moneda: pasivoVinculado.moneda,
-          formaPago: 'Efectivo',
-          detalles: nota,
-          actividad: 'Pago Pasivo',
-          instructor: formData.instructor,
-        },
-        axiosConfig
-      );
-    } catch (err) {
-      console.error('Error al acumular deuda:', err);
-      alert(`⚠️ El ingreso se guardó pero no se pudo acumular a ${pasivoVinculado.titulo}. Revisá manualmente en Cuentas Corrientes.`);
+    // 3. Acumular 5% de Hans en su pasivo (sobre el total del ingreso)
+    if (total > 0 && axiosConfig) {
+      try {
+        const resPasivos = await axios.get(
+          'https://kbnadmin-production.up.railway.app/api/pasivos',
+          axiosConfig
+        );
+        const pasivoHans = resPasivos.data.find(
+          p => p.titulo.toLowerCase() === HANS_PASIVO_TITULO.toLowerCase()
+        );
+        if (pasivoHans) {
+          const mHans = Math.round(total * HANS_PCT / 100 * 100) / 100;
+          const nota = `5% de ${actividad}${formData.detalles ? ' — ' + formData.detalles : ''} = ${mHans.toFixed(2)} ${formData.moneda}`;
+          await axios.post(
+            'https://kbnadmin-production.up.railway.app/api/clases/guardar',
+            {
+              tipoTransaccion: 'EGRESO',
+              tipoMovimientoPasivo: 'NUEVA_DEUDA',
+              pasivoId: pasivoHans.id,
+              total: String(-mHans),
+              fecha: formData.fecha,
+              moneda: pasivoHans.moneda,
+              formaPago: 'Efectivo',
+              detalles: nota,
+              actividad: 'Pago Pasivo',
+              instructor: 'Sistema',
+            },
+            axiosConfig
+          );
+        }
+      } catch (err) {
+        console.error('Error acumulando Hans:', err);
+      }
     }
   };
 
   return (
     <div className="max-w-2xl mx-auto bg-white p-8 rounded-lg shadow-md mt-10">
+      <button
+        onClick={() => setView('AGENDA')}
+        className="mb-4 text-xs font-bold text-gray-400 hover:text-indigo-600 transition-colors uppercase tracking-widest"
+      >
+        ← Volver a Agenda
+      </button>
 
       <h2 className="text-2xl font-bold mb-6 text-green-600">💰 Nueva Planilla de Ingreso</h2>
 
@@ -116,6 +160,14 @@ const Ingreso = ({ formData, handleChange, handleSubmit: originalHandleSubmit, I
                 <p className="text-[11px] text-amber-600 font-bold mt-1">⚠️ Ingresá las horas para calcular la deuda.</p>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Aviso sin cuenta corriente */}
+        {!pasivoVinculado && formData.instructor && formData.instructor !== 'Secretaria' && (
+          <div className="bg-gray-50 border border-gray-200 rounded-2xl p-3 text-[11px] text-gray-400 font-bold">
+            ℹ️ <span className="text-gray-600">{formData.instructor}</span> no tiene cuenta corriente vinculada.
+            Creala en <span className="text-indigo-600">Cuentas Corrientes → 🎓 Instructor</span>.
           </div>
         )}
 
@@ -231,16 +283,6 @@ const Ingreso = ({ formData, handleChange, handleSubmit: originalHandleSubmit, I
               onChange={handleChange}
               className="mt-1 block w-full rounded-md border p-2 border-gray-300 text-sm focus:border-green-500 focus:ring-green-500"
             >
-              {/* ── Nuevas monedas ── */}
-              <option value="R$_STONE_IGNA">R$ Stone Igna</option>
-              <option value="R$_STONE_JOSE">R$ Stone José</option>
-              <option value="R$_EFECTIVO">R$ Efectivo</option>
-              <option value="USD_EFECTIVO">USD Efectivo</option>
-              <option value="USD_MARIANA">USD Mariana</option>
-              <option value="EUR_WIZE_IGNA">€ Wize Igna</option>
-              {/* ── Separador ── */}
-              <option disabled>──────────────</option>
-              {/* ── Monedas originales ── */}
               <option value="BRL">Reales (BRL)</option>
               <option value="USD">Dólares (USD)</option>
               <option value="EUR">Euros (EUR)</option>
