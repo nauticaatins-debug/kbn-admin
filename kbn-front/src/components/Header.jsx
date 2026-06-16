@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
@@ -22,6 +22,7 @@ export default function Header() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const headerRef = useRef(null);
 
   const isLoginPage = location.pathname === "/login";
   const isLogged = !!user?.role;
@@ -30,6 +31,20 @@ export default function Header() {
   const isAdmin = role === "ADMINISTRADOR";
   const isSecretaria = role === "SECRETARIA";
   const isInstructor = role === "INSTRUCTOR" || role === "ALUMNO";
+
+  // ── Medir altura real del header y actualizar CSS variable ──────────────
+  useEffect(() => {
+    const updateHeight = () => {
+      if (headerRef.current) {
+        const h = headerRef.current.offsetHeight;
+        document.documentElement.style.setProperty("--header-h", `${h}px`);
+      }
+    };
+    updateHeight();
+    const ro = new ResizeObserver(updateHeight);
+    if (headerRef.current) ro.observe(headerRef.current);
+    return () => ro.disconnect();
+  }, [isLogged, menuOpen, role]);
 
   const handleLogout = async () => {
     await logout();
@@ -46,17 +61,17 @@ export default function Header() {
     activeTab === path || location.pathname === path;
 
   const navItems = [
-    { path: "/admin", label: "Panel admin", icon: "ti-layout-dashboard", show: isAdmin },
-    { path: "/instructor", label: "Instructor", icon: "ti-school", show: isAdmin || isInstructor },
-    { path: "/secretaria", label: "Secretaria", icon: "ti-file-text", show: isAdmin || isSecretaria },
-    { path: "/reportes", label: "Estadísticas", icon: "ti-chart-bar", show: isAdmin },
+    { path: "/admin",      label: "Panel admin",  icon: "ti-layout-dashboard", show: isAdmin },
+    { path: "/instructor", label: "Instructor",   icon: "ti-school",            show: isAdmin || isInstructor },
+    { path: "/secretaria", label: "Secretaria",   icon: "ti-file-text",         show: isAdmin || isSecretaria },
+    { path: "/reportes",   label: "Estadísticas", icon: "ti-chart-bar",         show: isAdmin },
   ].filter((item) => item.show);
 
   const displayName = user?.nombre || user?.name || user?.email?.split("@")[0] || "Usuario";
   const initials = ROLE_INITIALS[role] || "?";
 
   return (
-    <header className="bg-white border-b border-gray-100 fixed top-0 left-0 w-full z-50">
+    <header ref={headerRef} className="bg-white border-b border-gray-100 fixed top-0 left-0 w-full z-50">
 
       {/* Barra principal */}
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
@@ -67,11 +82,7 @@ export default function Header() {
           onClick={() => goTo("/")}
         >
           <div className="w-9 h-9 rounded-full overflow-hidden border border-gray-200 flex-shrink-0">
-            <img
-              src="/logo.png"
-              alt="Náutica Atins"
-              className="w-full h-full object-cover"
-            />
+            <img src="/logo.png" alt="Náutica Atins" className="w-full h-full object-cover" />
           </div>
           <div className="flex flex-col leading-tight">
             <span className="text-sm font-medium text-gray-900 tracking-wide">KBN Admin</span>
@@ -81,15 +92,11 @@ export default function Header() {
 
         {/* Menú escritorio */}
         <div className="hidden md:flex items-center gap-1">
-
-          {/* Badge de rol */}
           {isLogged && (
-            <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 border border-blue-100 mr-2">
+            <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-teal-50 text-teal-700 border border-teal-100 mr-2">
               {ROLE_LABELS[role] || role}
             </span>
           )}
-
-          {/* Chip de usuario */}
           {isLogged && (
             <div className="flex items-center gap-2 px-2.5 py-1 rounded-full border border-gray-100 bg-gray-50 mr-2">
               <div className="w-6 h-6 rounded-full bg-teal-700 flex items-center justify-center text-white text-[10px] font-medium flex-shrink-0">
@@ -98,8 +105,6 @@ export default function Header() {
               <span className="text-xs text-gray-700">{displayName}</span>
             </div>
           )}
-
-          {/* Login */}
           {!isLogged && !isLoginPage && (
             <button
               onClick={() => goTo("/login")}
@@ -109,8 +114,6 @@ export default function Header() {
               Iniciar sesión
             </button>
           )}
-
-          {/* Logout */}
           {isLogged && (
             <button
               onClick={handleLogout}
@@ -128,16 +131,13 @@ export default function Header() {
           onClick={() => setMenuOpen(!menuOpen)}
           aria-label={menuOpen ? "Cerrar menú" : "Abrir menú"}
         >
-          <i
-            className={`ti ${menuOpen ? "ti-x" : "ti-menu-2"} text-gray-600 text-xl`}
-            aria-hidden="true"
-          />
+          <i className={`ti ${menuOpen ? "ti-x" : "ti-menu-2"} text-gray-600 text-xl`} aria-hidden="true" />
         </button>
       </div>
 
-      {/* Tab bar — solo si está logueado */}
+      {/* Tab bar — solo si está logueado y hay items */}
       {isLogged && navItems.length > 0 && (
-        <div className="hidden md:flex border-t border-gray-100 px-6 overflow-x-auto scrollbar-hide">
+        <div className="hidden md:flex border-t border-gray-100 px-6 overflow-x-auto">
           {navItems.map((item) => (
             <button
               key={item.path}
@@ -158,8 +158,6 @@ export default function Header() {
       {/* Menú móvil */}
       {menuOpen && (
         <div className="md:hidden border-t border-gray-100 bg-white py-3 px-4 space-y-1">
-
-          {/* Info de usuario */}
           {isLogged && (
             <div className="flex items-center gap-3 px-2 py-3 mb-2 border-b border-gray-100">
               <div className="w-9 h-9 rounded-full bg-teal-700 flex items-center justify-center text-white text-sm font-medium">
@@ -171,7 +169,6 @@ export default function Header() {
               </div>
             </div>
           )}
-
           {navItems.map((item) => (
             <button
               key={item.path}
@@ -186,7 +183,6 @@ export default function Header() {
               {item.label}
             </button>
           ))}
-
           {!isLogged && !isLoginPage && (
             <button
               onClick={() => goTo("/login")}
@@ -196,7 +192,6 @@ export default function Header() {
               Iniciar sesión
             </button>
           )}
-
           {isLogged && (
             <button
               onClick={handleLogout}

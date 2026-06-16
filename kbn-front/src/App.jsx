@@ -209,7 +209,7 @@ function App() {
         <Header />
 
         <div style={{
-          paddingTop: 'calc(104px + env(safe-area-inset-top, 0px))',
+          paddingTop: 'calc(var(--header-h) + env(safe-area-inset-top, 0px))',
           minHeight: '100dvh',
           boxSizing: 'border-box',
           backgroundColor: NA.bg,
