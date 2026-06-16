@@ -235,7 +235,7 @@ const ReporteEstadisticas = () => {
 
         try {
             await axios.put(
-                `https://kbnadmin-production.up.railway.app/api/clases/asignar/${item.id}`,
+                `https://kbn-admin-production.up.railway.app/api/clases/asignar/${item.id}`,
                 { asignadoA, detalles: nuevosDetalles },
                 { headers: { Authorization: `Bearer ${token}` } }
             );
