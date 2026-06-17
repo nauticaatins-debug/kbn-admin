@@ -30,8 +30,6 @@ public class PasswordResetService {
     private String resendApiKey;
 
     private static final int TOKEN_EXPIRY_HOURS = 2;
-    private static final String FROM_EMAIL = "onboarding@resend.dev";
-    private static final String FROM_NAME  = "KBN Admin · Náutica Atins";
 
     // ── Solicitar reset ───────────────────────────────────────────
     public void requestPasswordReset(String email) throws Exception {
@@ -45,9 +43,9 @@ public class PasswordResetService {
 
         try {
             sendResetEmail(email, token, usuario.getNombre());
-            System.out.println("✅ Email enviado a: " + email);
+            System.out.println("Email enviado a: " + email);
         } catch (Exception e) {
-            System.err.println("❌ Error enviando email: " + e.getMessage());
+            System.err.println("Error enviando email: " + e.getMessage());
             throw e;
         }
     }
@@ -76,16 +74,15 @@ public class PasswordResetService {
         usuarioRepository.save(usuario);
     }
 
-    // ── Enviar email vía Resend API (HTTPS) ───────────────────────
+    // ── Enviar email via Resend API ───────────────────────────────
     private void sendResetEmail(String to, String token, String nombre) throws Exception {
         String resetLink = frontendUrl + "/#/reset-password?token=" + token;
-
         String html = buildEmailHtml(nombre, resetLink);
 
         String jsonBody = "{"
-            + "\"from\":\"" + FROM_NAME + " <" + FROM_EMAIL + ">\","
+            + "\"from\":\"KBN Admin <onboarding@resend.dev>\","
             + "\"to\":[\"" + to + "\"],"
-            + "\"subject\":\"Restablecer contraseña — KBN Admin\","
+            + "\"subject\":\"Restablecer contrasena - KBN Admin\","
             + "\"html\":" + jsonEscape(html)
             + "}";
 
@@ -93,8 +90,8 @@ public class PasswordResetService {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create("https://api.resend.com/emails"))
                 .header("Authorization", "Bearer " + resendApiKey)
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                .header("Content-Type", "application/json; charset=UTF-8")
+                .POST(HttpRequest.BodyPublishers.ofString(jsonBody, java.nio.charset.StandardCharsets.UTF_8))
                 .build();
 
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
@@ -122,27 +119,30 @@ public class PasswordResetService {
         return "<!DOCTYPE html>"
             + "<html><head><meta charset='UTF-8'></head>"
             + "<body style='margin:0;padding:0;background:#f0faf7;font-family:system-ui,sans-serif'>"
-            + "<div style='max-width:480px;margin:40px auto;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #c5e8df'>"
+            + "<div style='max-width:480px;margin:40px auto;background:#fff;border-radius:16px;"
+            + "overflow:hidden;border:1px solid #c5e8df'>"
             + "<div style='background:#0F6E56;padding:28px 32px;text-align:center'>"
             + "<h1 style='color:#fff;margin:0;font-size:20px;font-weight:500'>KBN Admin</h1>"
-            + "<p style='color:rgba(255,255,255,0.7);margin:4px 0 0;font-size:13px'>Náutica Atins</p>"
+            + "<p style='color:rgba(255,255,255,0.7);margin:4px 0 0;font-size:13px'>Nautica Atins</p>"
             + "</div>"
             + "<div style='padding:32px'>"
             + "<h2 style='margin:0 0 12px;font-size:18px;font-weight:500;color:#0a2e27'>Hola, " + nombre + "</h2>"
             + "<p style='color:#3a6b5e;font-size:14px;line-height:1.6;margin:0 0 24px'>"
-            + "Recibimos una solicitud para restablecer tu contraseña. "
-            + "Este enlace es válido por <strong>" + TOKEN_EXPIRY_HOURS + " horas</strong>."
+            + "Recibimos una solicitud para restablecer tu contrasena. "
+            + "Este enlace es valido por <strong>" + TOKEN_EXPIRY_HOURS + " horas</strong>."
             + "</p>"
-            + "<a href='" + resetLink + "' style='display:block;text-align:center;background:#0F6E56;color:#fff;"
-            + "text-decoration:none;padding:14px 24px;border-radius:10px;font-size:15px;font-weight:500;margin-bottom:24px'>"
-            + "Restablecer contraseña</a>"
+            + "<a href='" + resetLink + "' style='display:block;text-align:center;background:#0F6E56;"
+            + "color:#fff;text-decoration:none;padding:14px 24px;border-radius:10px;"
+            + "font-size:15px;font-weight:500;margin-bottom:24px'>Restablecer contrasena</a>"
             + "<p style='color:#9ca3af;font-size:12px;line-height:1.5;margin:0'>"
-            + "Si no solicitaste este cambio, ignorá este email.<br><br>"
-            + "O copiá este enlace: <span style='color:#0F6E56;word-break:break-all'>" + resetLink + "</span>"
+            + "Si no solicitaste este cambio, ignora este email.<br><br>"
+            + "O copia este enlace: <span style='color:#0F6E56;word-break:break-all'>"
+            + resetLink + "</span>"
             + "</p>"
             + "</div>"
-            + "<div style='background:#f0faf7;padding:16px 32px;text-align:center;border-top:1px solid #c5e8df'>"
-            + "<p style='color:#9ca3af;font-size:12px;margin:0'>© 2026 Náutica Atins · KBN Admin</p>"
+            + "<div style='background:#f0faf7;padding:16px 32px;text-align:center;"
+            + "border-top:1px solid #c5e8df'>"
+            + "<p style='color:#9ca3af;font-size:12px;margin:0'>2026 Nautica Atins - KBN Admin</p>"
             + "</div>"
             + "</div></body></html>";
     }
