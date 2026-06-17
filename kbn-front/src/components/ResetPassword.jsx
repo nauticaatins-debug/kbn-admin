@@ -235,12 +235,6 @@ const Spinner = ({ color = 'rgba(255,255,255,0.8)' }) => (
   </svg>
 );
 
-const NA = {
-  primary: '#1ABFA0', dark: '#0F6E56', darker: '#085041',
-  light: '#E1F5EE', mid: '#9FE1CB', bg: '#f0faf7',
-  text: '#0a2e27', text2: '#3a6b5e', border: '#c5e8df',
-};
-
 const s = {
   page: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: NA.bg, padding: '1rem' },
   card: { backgroundColor: '#fff', borderRadius: 16, border: `1px solid ${NA.border}`, padding: '2rem', width: '100%', maxWidth: 420 },
