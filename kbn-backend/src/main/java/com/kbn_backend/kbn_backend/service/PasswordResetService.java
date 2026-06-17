@@ -30,7 +30,7 @@ public class PasswordResetService {
     private String resendApiKey;
 
     private static final int TOKEN_EXPIRY_HOURS = 2;
-    private static final String FROM_EMAIL = "onboarding@resend.dev";
+    private static final String FROM_EMAIL = "noreply@nauticaatins.com";
     private static final String FROM_NAME  = "KBN Admin · Náutica Atins";
 
     // ── Solicitar reset ───────────────────────────────────────────
