@@ -9,6 +9,8 @@ import InstructorForm from './components/InstructorForm';
 import ReporteEstadisticas from './components/ReporteEstadisticas';
 import UserManagement from './components/UserManagement';
 import Secretaria from './components/Secretaria';
+import ForgotPassword from './components/ForgotPassword';
+import ResetPassword  from './components/ResetPassword';
 
 // ── Paleta Náutica Atins ───────────────────────────────────────────────────
 const NA = {
@@ -217,6 +219,8 @@ function App() {
           <Routes>
             <Route path="/" element={<HomeRedirect />} />
             <Route path="/login"    element={<Login />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password"  element={<ResetPassword />} />
             <Route path="/register" element={<Register />} />
 
             {/* ADMINISTRADOR */}

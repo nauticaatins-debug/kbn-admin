@@ -39,7 +39,13 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity httpSecurity) throws Exception {
         httpSecurity.csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/login", "/login/**", "/register", "/register/**").permitAll()
+                        .requestMatchers(
+                            "/login", "/login/**",
+                            "/register", "/register/**",
+                            "/auth/forgot-password",
+                            "/auth/reset-password",
+                            "/auth/validate-reset-token"
+                        ).permitAll()
                         .requestMatchers("/administracion/**").hasRole("ADMINISTRADOR")
                         .anyRequest().authenticated()
                 )
