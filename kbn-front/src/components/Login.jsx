@@ -141,7 +141,7 @@ export default function Login() {
               />
               Recordarme
             </label>
-            <Link to="#/forgot-password" style={styles.forgot}>
+            <Link to="/forgot-password" style={styles.forgot}>
               ¿Olvidaste tu contraseña?
             </Link>
           </div>
