@@ -76,32 +76,18 @@ public class PasswordResetService {
 
     // ── Enviar email via Resend API ───────────────────────────────
     private void sendResetEmail(String to, String token, String nombre) throws Exception {
-        String resetLink = frontendUrl + "/#/reset-password?token=" + token;
-        String html = buildEmailHtml(nombre, resetLink);
+    String resetLink = frontendUrl + "/#/reset-password?token=" + token;
+    String html = buildEmailHtml(nombre, resetLink);
 
-        String jsonBody = "{"
-            + "\"from\":\"KBN Admin <onboarding@resend.dev>\","
-            + "\"to\":[\"" + to + "\"],"
-            + "\"subject\":\"Restablecer contrasena - KBN Admin\","
-            + "\"html\":" + jsonEscape(html)
-            + "}";
+    // En testing mode, Resend solo permite mandar a nautica.atins@gmail.com
+    String sendTo = "nautica.atins@gmail.com";
 
-        HttpClient client = HttpClient.newHttpClient();
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("https://api.resend.com/emails"))
-                .header("Authorization", "Bearer " + resendApiKey)
-                .header("Content-Type", "application/json; charset=UTF-8")
-                .POST(HttpRequest.BodyPublishers.ofString(jsonBody, java.nio.charset.StandardCharsets.UTF_8))
-                .build();
-
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-        System.out.println("Resend response: " + response.statusCode() + " - " + response.body());
-
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new Exception("Resend API error: " + response.statusCode() + " - " + response.body());
-        }
-    }
+    String jsonBody = "{"
+        + "\"from\":\"KBN Admin <onboarding@resend.dev>\","
+        + "\"to\":[\"" + sendTo + "\"],"
+        + "\"subject\":\"Reset de contrasena para: " + to + "\","
+        + "\"html\":" + jsonEscape(html)
+        + "}";
 
     // ── Escapar JSON ──────────────────────────────────────────────
     private String jsonEscape(String html) {
