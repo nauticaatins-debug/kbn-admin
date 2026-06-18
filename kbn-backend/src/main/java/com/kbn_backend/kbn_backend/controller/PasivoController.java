@@ -1,11 +1,15 @@
 package com.kbn_backend.kbn_backend.controller;
 
 import com.kbn_backend.kbn_backend.model.Pasivo;
+import com.kbn_backend.kbn_backend.model.PagoPasivo;
 import com.kbn_backend.kbn_backend.repository.PasivoRepository;
+import com.kbn_backend.kbn_backend.repository.PagoPasivoRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -14,6 +18,23 @@ public class PasivoController {
 
     @Autowired
     private PasivoRepository pasivoRepository;
+
+    @Autowired
+    private PagoPasivoRepository pagoPasivoRepository;
+
+    // --- DTO para acumular saldo sin generar movimiento de caja ---
+    public static class AcumularRequest {
+        private Double monto; // puede ser negativo (deuda) o positivo (a favor)
+        private String nota;
+        private String fecha; // opcional, formato yyyy-MM-dd
+
+        public Double getMonto() { return monto; }
+        public void setMonto(Double monto) { this.monto = monto; }
+        public String getNota() { return nota; }
+        public void setNota(String nota) { this.nota = nota; }
+        public String getFecha() { return fecha; }
+        public void setFecha(String fecha) { this.fecha = fecha; }
+    }
 
     // 1. Obtener todas las cuentas corrientes
     @GetMapping
@@ -39,6 +60,34 @@ public class PasivoController {
                     pasivo.setFecha(detallesPasivo.getFecha());
                     // Si tienes historialPagos como relación, asegúrate de manejarlo aquí si es necesario
                     Pasivo actualizado = pasivoRepository.save(pasivo);
+                    return ResponseEntity.ok(actualizado);
+                })
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    // 3b. ACUMULAR SALDO — actualiza montoTotal + historial, SIN generar movimiento de caja.
+    //     Usar para deudas internas (horas de instructor, reparto de porcentajes) que NO
+    //     implican que haya salido o entrado plata real de la caja todavía.
+    @Transactional
+    @PutMapping("/{id}/acumular")
+    public ResponseEntity<?> acumularSaldo(@PathVariable Long id, @RequestBody AcumularRequest request) {
+        return pasivoRepository.findById(id)
+                .map(pasivo -> {
+                    double monto = request.getMonto() != null ? request.getMonto() : 0;
+
+                    pasivo.setMontoTotal(pasivo.getMontoTotal() + monto);
+
+                    PagoPasivo registro = new PagoPasivo();
+                    registro.setMontoPagado(monto);
+                    registro.setFecha(
+                            request.getFecha() != null ? LocalDate.parse(request.getFecha()) : LocalDate.now()
+                    );
+                    registro.setNota(request.getNota() != null ? request.getNota() : "Movimiento interno");
+                    registro.setPasivo(pasivo);
+
+                    pagoPasivoRepository.save(registro);
+                    Pasivo actualizado = pasivoRepository.save(pasivo);
+
                     return ResponseEntity.ok(actualizado);
                 })
                 .orElse(ResponseEntity.notFound().build());

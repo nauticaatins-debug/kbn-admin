@@ -99,7 +99,9 @@ const Ingreso = ({ formData, handleChange, handleSubmit: originalHandleSubmit, I
     }
     const match = pasivos.find((p) => {
       const { esInstructor } = decodeTarifa(p.descripcion);
-      return esInstructor && p.titulo.toLowerCase() === formData.instructor.toLowerCase();
+      const tituloNorm = p.titulo.toLowerCase().replace(/\s+/g, ' ').trim();
+      const instructorNorm = formData.instructor.toLowerCase().replace(/\s+/g, ' ').trim();
+      return esInstructor && tituloNorm === instructorNorm;
     });
     if (match) {
       const { tarifaHora } = decodeTarifa(match.descripcion);
@@ -126,19 +128,14 @@ const Ingreso = ({ formData, handleChange, handleSubmit: originalHandleSubmit, I
         const horas = parseFloat(formData.horas) || 0;
         const detalles = formData.detalles ? ` — ${formData.detalles}` : '';
         const nota = `Pago por ${horas}h de ${actividad}${detalles} · ${horas}h × ${tarifaHora} BRL/h = ${deudaCalculada.toFixed(2)} BRL`;
-        await axios.post(
-          'https://kbn-admin-production.up.railway.app/api/clases/guardar',
+        // Acumula la deuda en la tarjeta del instructor SIN generar un movimiento
+        // de caja (no es plata que salió, es deuda interna acumulada).
+        await axios.put(
+          `https://kbn-admin-production.up.railway.app/api/pasivos/${pasivoVinculado.id}/acumular`,
           {
-            tipoTransaccion: 'EGRESO',
-            tipoMovimientoPasivo: 'NUEVA_DEUDA',
-            pasivoId: pasivoVinculado.id,
-            total: String(-deudaCalculada),
+            monto: -deudaCalculada,
+            nota,
             fecha: formData.fecha,
-            moneda: pasivoVinculado.moneda,
-            formaPago: 'Efectivo',
-            detalles: nota,
-            actividad: 'Pago Pasivo',
-            instructor: formData.instructor,
           },
           axiosConfig
         );

@@ -184,33 +184,35 @@ const Pasivos = ({ axiosConfig, setView }) => {
         : 'Pago'
       }: ${selectedPasivo.titulo}`;
 
-      const payload = transactionType === 'NUEVA_DEUDA'
-        ? {
-            tipoTransaccion: 'EGRESO',
-            tipoMovimientoPasivo: 'NUEVA_DEUDA',
-            pasivoId: selectedPasivo.id,
-            total: String(-Math.abs(monto)),
+      if (transactionType === 'NUEVA_DEUDA') {
+        // Solo registra deuda interna: NO sale plata de caja, así que no
+        // genera un movimiento en clases_registros (no aparece en Egresos).
+        await axios.put(
+          `https://kbn-admin-production.up.railway.app/api/pasivos/${selectedPasivo.id}/acumular`,
+          {
+            monto: -Math.abs(monto),
+            nota,
             fecha: transactionData.fecha,
-            moneda: selectedPasivo.moneda,
-            formaPago: 'Efectivo',
-            detalles: nota,
-            actividad: 'Pago Pasivo',
-            instructor: 'Secretaria',
-          }
-        : {
-            tipoTransaccion: 'EGRESO',
-            tipoMovimientoPasivo: transactionType,
-            pasivoId: selectedPasivo.id,
-            total: String(Math.abs(monto)),
-            fecha: transactionData.fecha,
-            moneda: selectedPasivo.moneda,
-            formaPago: transactionData.formaPago || 'Efectivo',
-            detalles: nota,
-            actividad: 'Pago Pasivo',
-            instructor: 'Secretaria',
-          };
-
-      await axios.post('https://kbn-admin-production.up.railway.app/api/clases/guardar', payload, axiosConfig);
+          },
+          axiosConfig
+        );
+      } else {
+        // PAGO_DEUDA / ADELANTO: acá sí sale plata real de la caja, por eso
+        // queda registrado como EGRESO en clases_registros (visible en Reportes).
+        const payload = {
+          tipoTransaccion: 'EGRESO',
+          tipoMovimientoPasivo: transactionType,
+          pasivoId: selectedPasivo.id,
+          total: String(Math.abs(monto)),
+          fecha: transactionData.fecha,
+          moneda: selectedPasivo.moneda,
+          formaPago: transactionData.formaPago || 'Efectivo',
+          detalles: nota,
+          actividad: 'Pago Pasivo',
+          instructor: 'Secretaria',
+        };
+        await axios.post('https://kbn-admin-production.up.railway.app/api/clases/guardar', payload, axiosConfig);
+      }
 
       setShowTransactionModal(false);
       setTransactionData(initialTransactionForm);

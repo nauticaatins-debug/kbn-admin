@@ -192,17 +192,12 @@ const ReporteEstadisticas = () => {
     const nota = `${etiqueta} de ${item.actividad || 'Clase'} — ${item.fecha} = ${montoRedondeado.toFixed(2)} ${item.moneda}`;
     console.log('[saveAssignment] Acumulando', montoRedondeado, 'en', pasivo.titulo, '(id', pasivo.id + ')');
     try {
-      const res = await api.post('/api/clases/guardar', {
-        tipoTransaccion: 'EGRESO',
-        tipoMovimientoPasivo: 'NUEVA_DEUDA',
-        pasivoId: pasivo.id,
-        total: String(-montoRedondeado),
+      // /acumular actualiza el saldo + historial de la tarjeta SIN generar
+      // un movimiento de caja: esto es deuda interna, todavía no salió plata.
+      const res = await api.put(`/api/pasivos/${pasivo.id}/acumular`, {
+        monto: -montoRedondeado,
+        nota,
         fecha: item.fecha,
-        moneda: pasivo.moneda,
-        formaPago: 'Efectivo',
-        detalles: nota,
-        actividad: 'Pago Pasivo',
-        instructor: 'Sistema',
       });
       console.log('[saveAssignment] OK ->', pasivo.titulo, res.status, res.data);
     } catch (e) {
