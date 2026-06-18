@@ -142,6 +142,13 @@
 			<artifactId>spring-boot-starter-mail</artifactId>
 		</dependency>
 
+		<!-- SendGrid -->
+		<dependency>
+			<groupId>com.sendgrid</groupId>
+			<artifactId>sendgrid-java</artifactId>
+			<version>4.10.2</version>
+		</dependency>
+
 
 
 	</dependencies>

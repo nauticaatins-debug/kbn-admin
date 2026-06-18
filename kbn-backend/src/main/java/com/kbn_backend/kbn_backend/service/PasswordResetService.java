@@ -2,15 +2,18 @@ package com.kbn_backend.kbn_backend.service;
 
 import com.kbn_backend.kbn_backend.model.Usuario;
 import com.kbn_backend.kbn_backend.repository.UsuarioRepository;
+import com.sendgrid.Method;
+import com.sendgrid.Request;
+import com.sendgrid.Response;
+import com.sendgrid.SendGrid;
+import com.sendgrid.helpers.mail.Mail;
+import com.sendgrid.helpers.mail.objects.Content;
+import com.sendgrid.helpers.mail.objects.Email;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -26,8 +29,14 @@ public class PasswordResetService {
     @Value("${app.frontend.url}")
     private String frontendUrl;
 
-    @Value("${resend.api.key}")
-    private String resendApiKey;
+    @Value("${sendgrid.api.key}")
+    private String sendgridApiKey;
+
+    @Value("${sendgrid.from.email}")
+    private String fromEmail;
+
+    @Value("${sendgrid.from.name}")
+    private String fromName;
 
     private static final int TOKEN_EXPIRY_HOURS = 2;
 
@@ -74,44 +83,29 @@ public class PasswordResetService {
         usuarioRepository.save(usuario);
     }
 
-    // ── Enviar email via Resend API ───────────────────────────────
+    // ── Enviar email via SendGrid API ─────────────────────────────
     private void sendResetEmail(String to, String token, String nombre) throws Exception {
         String resetLink = frontendUrl + "/#/reset-password?token=" + token;
         String html = buildEmailHtml(nombre, resetLink);
 
-        String jsonBody = "{"
-            + "\"from\":\"KBN Admin <onboarding@resend.dev>\","
-            + "\"to\":[\"" + to + "\"],"
-            + "\"subject\":\"Restablecer contrasena - KBN Admin\","
-            + "\"html\":" + jsonEscape(html)
-            + "}";
+        Email from = new Email(fromEmail, fromName);
+        Email toEmail = new Email(to);
+        Content content = new Content("text/html", html);
+        Mail mail = new Mail(from, "Restablecer contrasena - KBN Admin", toEmail, content);
 
-        HttpClient client = HttpClient.newHttpClient();
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("https://api.resend.com/emails"))
-                .header("Authorization", "Bearer " + resendApiKey)
-                .header("Content-Type", "application/json; charset=UTF-8")
-                .POST(HttpRequest.BodyPublishers.ofString(jsonBody, java.nio.charset.StandardCharsets.UTF_8))
-                .build();
+        SendGrid sg = new SendGrid(sendgridApiKey);
+        Request request = new Request();
+        request.setMethod(Method.POST);
+        request.setEndpoint("mail/send");
+        request.setBody(mail.build());
 
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        Response response = sg.api(request);
 
-        System.out.println("Resend response: " + response.statusCode() + " - " + response.body());
+        System.out.println("SendGrid response: " + response.getStatusCode() + " - " + response.getBody());
 
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new Exception("Resend API error: " + response.statusCode() + " - " + response.body());
+        if (response.getStatusCode() < 200 || response.getStatusCode() >= 300) {
+            throw new Exception("SendGrid API error: " + response.getStatusCode() + " - " + response.getBody());
         }
-    }
-
-    // ── Escapar JSON ──────────────────────────────────────────────
-    private String jsonEscape(String html) {
-        return "\"" + html
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\n", "\\n")
-            .replace("\r", "")
-            .replace("\t", "\\t")
-            + "\"";
     }
 
     // ── Template HTML ─────────────────────────────────────────────
