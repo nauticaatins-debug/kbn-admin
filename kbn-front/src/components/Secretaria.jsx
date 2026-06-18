@@ -68,9 +68,9 @@ const Secretaria = () => {
     fetchData();
   }, [fetchData, view]);
 
-  useEffect(() => {
-    setView('INICIO');
-  }, [location.pathname]);
+// useEffect(() => {
+//   setView('INICIO');
+// }, [location.pathname]);
   
   useEffect(() => {
     const total = Number(financeData.horas) * Number(financeData.tarifa);
@@ -148,6 +148,16 @@ const Secretaria = () => {
       </select>
     </div>
   );
+  <MenuCard
+  icon="💰"
+  title="Ingreso"
+  sub="Caja"
+  color="bg-emerald-600"
+  onClick={() => {
+    console.log('CLICK INGRESO');
+    setView('INGRESO');
+  }}
+/>
 
   // --- RENDERIZADO DE VISTAS ---
   if (view === 'INICIO') {
