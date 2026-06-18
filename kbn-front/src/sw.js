@@ -1,9 +1,18 @@
 // src/sw.js — Service Worker con Push Notifications
 import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching'
 
-// Precachea los assets del build automáticamente
+// Activa el nuevo Service Worker inmediatamente al detectarlo, en vez de
+// esperar a que el usuario cierre todas las pestañas de la app. Sin esto,
+// cada deploy nuevo queda "atascado" y el navegador sigue sirviendo el
+// bundle JS viejo desde caché indefinidamente.
+self.skipWaiting()
+
 precacheAndRoute(self.__WB_MANIFEST)
 cleanupOutdatedCaches()
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim())
+})
 
 // ── PUSH NOTIFICATIONS ──────────────────────────────────────────
 self.addEventListener('push', (event) => {

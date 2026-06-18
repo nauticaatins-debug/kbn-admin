@@ -50,7 +50,7 @@ export const usePushNotifications = (axiosConfig, userId) => {
 
       // 4. Mandar la suscripción al backend para guardarla
       await axios.post(
-        'https://kbnadmin-production.up.railway.app/api/push/suscribir',
+        'https://kbn-admin-production.up.railway.app/api/push/suscribir',
         {
           usuarioId: userId,
           endpoint: subscription.endpoint,
@@ -73,7 +73,7 @@ export const usePushNotifications = (axiosConfig, userId) => {
     if (sub) {
       await sub.unsubscribe()
       await axios.delete(
-        `https://kbnadmin-production.up.railway.app/api/push/desuscribir/${userId}`,
+        `https://kbn-admin-production.up.railway.app/api/push/desuscribir/${userId}`,
         axiosConfig
       )
       setSuscrito(false)
