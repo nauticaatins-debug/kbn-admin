@@ -1,132 +1,220 @@
-import React from 'react';
+import React, { useState } from 'react';
+
+// ── Paleta Náutica Atins (variante rosa/rojo para egresos) ──────────────────
+const NA = {
+  primary: '#1ABFA0',
+  dark: '#0F6E56',
+  darker: '#085041',
+  light: '#E1F5EE',
+  border: '#c5e8df',
+  text: '#0a2e27',
+  text2: '#3a6b5e',
+};
+
+const ROSE = {
+  bg: '#fdf2f2',
+  border: '#f3d4d4',
+  text: '#9f1d1d',
+  dark: '#7a1515',
+  accent: '#c23a3a',
+};
+
+const MONEDAS = [
+  { value: 'R$_STONE_JOSE', label: 'R$ Stone José' },
+  { value: 'R$_STONE_IGNA', label: 'R$ Stone Igna' },
+  { value: 'R$_EFECTIVO', label: 'R$ Efectivo' },
+  { value: 'USD_EFECTIVO', label: 'USD Efectivo' },
+  { value: 'USD_MARIANA', label: 'USD Mariana' },
+  { value: 'EUR_WIZE_IGNA', label: '€ Wize Igna' },
+  { divider: true },
+  { value: 'USD', label: 'Dólares (USD)' },
+  { value: 'BRL', label: 'Reales (BRL)' },
+  { value: 'EUR', label: 'Euros (EUR)' },
+  { value: 'ARS', label: 'Pesos (ARS)' },
+  { value: 'CLP', label: 'Pesos Chilenos (CLP)' },
+];
+
+const sx = {
+  label: { fontSize: 11, color: NA.text2, display: 'block', marginBottom: 5, fontWeight: 500 },
+  input: {
+    width: '100%', padding: '11px 13px', borderRadius: 10,
+    border: `0.5px solid ${NA.border}`, background: '#fff',
+    color: NA.text, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box',
+    transition: 'border-color .15s, box-shadow .15s',
+  },
+  field: { marginBottom: 16 },
+};
+
+const focusOn = (e) => { e.target.style.borderColor = ROSE.accent; e.target.style.boxShadow = `0 0 0 3px ${ROSE.bg}`; };
+const focusOff = (e) => { e.target.style.borderColor = NA.border; e.target.style.boxShadow = 'none'; };
+
+const Field = ({ label, children }) => (
+  <div style={sx.field}>
+    <label style={sx.label}>{label}</label>
+    {children}
+  </div>
+);
 
 const Egreso = ({ formData, handleChange, handleSubmit, InstructorField, setView }) => {
-  
-  // Función intermedia para asegurar que el monto vaya a 'total' y no solo a 'gastos'
-  const handleEgresoChange = (e) => {
-    const { name, value } = e.target;
-    if (name === 'montoEgreso') {
-      // Actualizamos 'total' (para el backend) y 'gastos' (por si lo usas en el estado local)
-      handleChange({ target: { name: 'total', value: value } });
-      handleChange({ target: { name: 'gastos', value: value } });
-    } else {
-      handleChange(e);
+  const [guardando, setGuardando] = useState(false);
+
+  const onSubmit = async (e) => {
+    setGuardando(true);
+    try {
+      await handleSubmit(e);
+    } finally {
+      setGuardando(false);
     }
   };
 
+  const monto = parseFloat(formData.total) || 0;
+
   return (
-    <div className="max-w-2xl mx-auto bg-white p-8 rounded-lg shadow-md mt-10">
+    <div style={{ maxWidth: 560, margin: '0 auto', padding: '0 4px 60px' }}>
+      {/* ── Header de pantalla ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+        {setView && (
+          <button
+            onClick={() => setView('AGENDA')}
+            style={{
+              width: 36, height: 36, borderRadius: 10, border: `0.5px solid ${NA.border}`,
+              background: '#fff', color: NA.text2, display: 'flex', alignItems: 'center',
+              justifyContent: 'center', cursor: 'pointer', flexShrink: 0,
+            }}
+            aria-label="Volver"
+          >
+            <i className="ti ti-arrow-left" style={{ fontSize: 17 }} aria-hidden="true" />
+          </button>
+        )}
+        <div>
+          <h1 style={{ fontSize: 19, fontWeight: 500, color: NA.text, margin: 0 }}>Nuevo egreso</h1>
+          <p style={{ fontSize: 12, color: NA.text2, margin: '2px 0 0' }}>Registrá un gasto o salida de caja</p>
+        </div>
+      </div>
 
-      <h2 className="text-2xl font-bold mb-6 text-red-600 italic uppercase tracking-tighter">💸 Registro de Egreso</h2>
-
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Aseguramos que el tipo sea EGRESO */}
+      <form onSubmit={onSubmit}>
         <input type="hidden" name="tipoTransaccion" value="EGRESO" />
 
-        <div className="space-y-1">
-          <InstructorField />
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Fecha</label>
-            <input
-              type="date"
-              name="fecha"
-              value={formData.fecha}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border p-2 border-gray-300 text-sm focus:ring-red-500 focus:border-red-500 font-bold"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-bold text-gray-700">Monto del Egreso</label>
+        {/* ── Card protagonista: el monto ── */}
+        <div style={{
+          background: ROSE.dark, borderRadius: 16, padding: 24, marginBottom: 16,
+          textAlign: 'center',
+        }}>
+          <p style={{
+            fontSize: 11, color: 'rgba(255,255,255,.6)', textTransform: 'uppercase',
+            letterSpacing: '.08em', margin: '0 0 10px',
+          }}>
+            Monto a descontar de caja
+          </p>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 6 }}>
+            <span style={{ fontSize: 22, color: 'rgba(255,255,255,.45)' }}>$</span>
             <input
               type="number"
-              name="total" /* CAMBIO ACÁ: antes decía "gastos" */
+              name="total"
               inputMode="decimal"
-              value={formData.total} /* CAMBIO ACÁ: antes decía formData.gastos */
+              value={formData.total}
               onChange={handleChange}
-              className="mt-1 block w-full rounded-md border p-2 border-gray-300 text-red-600 font-bold text-sm focus:ring-red-500 focus:border-red-500"
-              placeholder="Monto a descontar"
+              placeholder="0.00"
               required
+              style={{
+                background: 'transparent', border: 'none', outline: 'none',
+                color: '#fff', fontSize: 42, fontWeight: 600, textAlign: 'center',
+                width: 220, fontFamily: 'inherit',
+              }}
             />
+          </div>
+
+          <div style={{ marginTop: 18, display: 'inline-block', textAlign: 'left' }}>
+            <select
+              name="moneda"
+              value={formData.moneda}
+              onChange={handleChange}
+              style={{
+                background: 'rgba(255,255,255,.1)', border: '0.5px solid rgba(255,255,255,.2)',
+                color: '#fff', borderRadius: 99, padding: '6px 14px', fontSize: 13,
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              {MONEDAS.map((m, i) => m.divider
+                ? <option key={`div-${i}`} disabled>──────────</option>
+                : <option key={m.value} value={m.value} style={{ color: '#000' }}>{m.label}</option>
+              )}
+            </select>
           </div>
         </div>
 
-        {/* Moneda con nuevas opciones al principio */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Moneda</label>
-          <select
-            name="moneda"
-            value={formData.moneda}
-            onChange={handleChange}
-            className="mt-1 block w-full rounded-md border p-2 border-gray-300 text-sm font-bold focus:ring-red-500 focus:border-red-500"
-          >
-            {/* ── Nuevas monedas ── */}
-            <option value="R$_STONE_JOSE">R$ Stone José</option>
-            <option value="R$_STONE_IGNA">R$ Stone Igna</option>
-            <option value="R$_EFECTIVO">R$ Efectivo</option>
-            <option value="USD_EFECTIVO">USD Efectivo</option>
-            <option value="USD_MARIANA">USD Mariana</option>
-            <option value="EUR_WIZE_IGNA">€ Wize Igna</option>
-            {/* ── Separador ── */}
-            <option disabled>──────────────</option>
-            {/* ── Monedas originales ── */}
-            <option value="USD">Dólares (USD)</option>
-            <option value="BRL">Reales (BRL)</option>
-            <option value="EUR">Euros (EUR)</option>
-            <option value="ARS">Pesos (ARS)</option>
-            <option value="CLP">Pesos Chilenos (CLP)</option>
-          </select>
-        </div>
+        {/* ── Card: detalle de la operación ── */}
+        <div style={{ background: '#fff', borderRadius: 16, border: `0.5px solid ${NA.border}`, padding: 22, marginBottom: 16 }}>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Concepto / Detalles</label>
-          <textarea
-            name="detalles"
-            rows="3"
-            value={formData.detalles || ''}
-            onChange={handleChange}
-            className="mt-1 block w-full rounded-md border p-2 border-gray-300 text-sm focus:ring-red-500 focus:border-red-500"
-            placeholder="Ej: Pago de lancha, reparación de kite, etc."
-            required
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Forma de Pago</label>
-          <select
-            name="formaPago"
-            value={formData.formaPago}
-            onChange={handleChange}
-            className="mt-1 block w-full rounded-md border p-2 border-gray-300 text-sm focus:ring-red-500 focus:border-red-500"
-          >
-            <option value="Efectivo">Efectivo</option>
-            <option value="Transferencia">Transferencia</option>
-            <option value="Otro">Otro...</option>
-          </select>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 0 }}>
+            <Field label="Fecha">
+              <input
+                type="date" name="fecha" value={formData.fecha} onChange={handleChange} required
+                style={sx.input} onFocus={focusOn} onBlur={focusOff}
+              />
+            </Field>
+            <Field label="Forma de pago">
+              <select
+                name="formaPago" value={formData.formaPago} onChange={handleChange}
+                style={{ ...sx.input, cursor: 'pointer' }} onFocus={focusOn} onBlur={focusOff}
+              >
+                <option value="Efectivo">Efectivo</option>
+                <option value="Transferencia">Transferencia</option>
+                <option value="Otro">Otra...</option>
+              </select>
+            </Field>
+          </div>
 
           {formData.formaPago === 'Otro' && (
-            <input
-              type="text"
-              placeholder="Especifique forma de pago"
-              name="detalleFormaPago" // Cambiado para coincidir con el backend
-              value={formData.detalleFormaPago || ''}
-              onChange={handleChange}
-              className="mt-2 block w-full rounded-md border p-2 border-gray-300 text-sm"
-            />
+            <Field label="Especificar forma de pago">
+              <input
+                type="text" name="detalleFormaPago" value={formData.detalleFormaPago || ''} onChange={handleChange}
+                style={sx.input} onFocus={focusOn} onBlur={focusOff}
+              />
+            </Field>
           )}
+
+          <Field label="Instructor relacionado (opcional)">
+            <InstructorField />
+          </Field>
+
+          <Field label="Concepto">
+            <textarea
+              name="detalles" rows={3} value={formData.detalles || ''} onChange={handleChange}
+              placeholder="Ej: Pago de lancha, reparación de kite, etc."
+              required
+              style={{ ...sx.input, resize: 'vertical', fontFamily: 'inherit' }}
+              onFocus={focusOn} onBlur={focusOff}
+            />
+          </Field>
         </div>
 
         <button
           type="submit"
-          className="w-full flex justify-center py-4 px-4 border border-transparent rounded-xl shadow-lg text-sm font-black text-white bg-red-600 hover:bg-red-700 transition-all uppercase tracking-widest mt-6"
+          disabled={guardando}
+          style={{
+            width: '100%', padding: '15px', borderRadius: 12, border: 'none',
+            background: guardando ? '#e0a3a3' : ROSE.accent, color: '#fff',
+            fontSize: 14, fontWeight: 500, cursor: guardando ? 'default' : 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            transition: 'background .15s',
+          }}
         >
-          Registrar Egreso
+          {guardando ? (
+            <>
+              <i className="ti ti-loader-2" style={{ fontSize: 17, animation: 'kbn-spin .7s linear infinite' }} aria-hidden="true" />
+              Registrando...
+            </>
+          ) : (
+            <>
+              <i className="ti ti-minus" style={{ fontSize: 17 }} aria-hidden="true" />
+              Registrar egreso{monto > 0 ? ` · ${monto.toFixed(2)}` : ''}
+            </>
+          )}
         </button>
       </form>
+
+      <style>{`@keyframes kbn-spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 };

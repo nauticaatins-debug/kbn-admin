@@ -1,6 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
+// ── Paleta Náutica Atins ───────────────────────────────────────────────────
+const NA = {
+  primary: '#1ABFA0',
+  dark: '#0F6E56',
+  darker: '#085041',
+  light: '#E1F5EE',
+  mid: '#9FE1CB',
+  bg: '#f0faf7',
+  text: '#0a2e27',
+  text2: '#3a6b5e',
+  border: '#c5e8df',
+};
+
 const TARIFA_PREFIX = '__tarifa__:';
 
 const decodeTarifa = (descripcionRaw) => {
@@ -13,27 +26,78 @@ const decodeTarifa = (descripcionRaw) => {
   return { tarifaHora, esInstructor: true };
 };
 
-const Ingreso = ({ formData, handleChange, handleSubmit: originalHandleSubmit, InstructorField, setView, axiosConfig }) => {
+const ACTIVIDADES = ['Clase de Kite', 'Clase de Wing', 'Clase de Windsurf', 'Rental', 'Otro'];
 
+const MONEDAS = [
+  { value: 'R$_STONE_JOSE', label: 'R$ Stone José' },
+  { value: 'R$_STONE_IGNA', label: 'R$ Stone Igna' },
+  { value: 'R$_EFECTIVO', label: 'R$ Efectivo' },
+  { value: 'USD_EFECTIVO', label: 'USD Efectivo' },
+  { value: 'USD_MARIANA', label: 'USD Mariana' },
+  { value: 'EUR_WIZE_IGNA', label: '€ Wize Igna' },
+  { divider: true },
+  { value: 'BRL', label: 'Reales (BRL)' },
+  { value: 'USD', label: 'Dólares (USD)' },
+  { value: 'EUR', label: 'Euros (EUR)' },
+  { value: 'ARS', label: 'Pesos (ARS)' },
+  { value: 'CLP', label: 'Pesos Chilenos (CLP)' },
+];
+
+const FORMAS_PAGO = ['Efectivo', 'MercadoPago', 'Transferencia', 'Tarjeta de Crédito', 'USD', 'Otro'];
+
+// ── Estilos reutilizables ────────────────────────────────────────────────
+const sx = {
+  label: { fontSize: 11, color: NA.text2, display: 'block', marginBottom: 5, fontWeight: 500 },
+  input: {
+    width: '100%', padding: '11px 13px', borderRadius: 10,
+    border: `0.5px solid ${NA.border}`, background: '#fff',
+    color: NA.text, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box',
+    transition: 'border-color .15s, box-shadow .15s',
+  },
+  field: { marginBottom: 16 },
+  row: { display: 'grid', gap: 14 },
+};
+
+const Field = ({ label, children }) => (
+  <div style={sx.field}>
+    <label style={sx.label}>{label}</label>
+    {children}
+  </div>
+);
+
+const focusOn = (e) => { e.target.style.borderColor = NA.primary; e.target.style.boxShadow = `0 0 0 3px ${NA.light}`; };
+const focusOff = (e) => { e.target.style.borderColor = NA.border; e.target.style.boxShadow = 'none'; };
+
+const TextInput = (props) => (
+  <input {...props} style={{ ...sx.input, ...(props.style || {}) }} onFocus={focusOn} onBlur={focusOff} />
+);
+
+const Select = ({ children, ...props }) => (
+  <select {...props} style={{ ...sx.input, cursor: 'pointer', ...(props.style || {}) }} onFocus={focusOn} onBlur={focusOff}>
+    {children}
+  </select>
+);
+
+const Ingreso = ({ formData, handleChange, handleSubmit: originalHandleSubmit, InstructorField, setView, axiosConfig }) => {
   const [pasivos, setPasivos] = useState([]);
   const [pasivoVinculado, setPasivoVinculado] = useState(null);
   const [deudaCalculada, setDeudaCalculada] = useState(0);
+  const [guardando, setGuardando] = useState(false);
 
   useEffect(() => {
     if (!axiosConfig) return;
     axios.get('https://kbn-admin-production.up.railway.app/api/pasivos', axiosConfig)
-      .then(res => setPasivos(res.data))
-      .catch(err => console.error('Error cargando pasivos:', err));
+      .then((res) => setPasivos(res.data))
+      .catch((err) => console.error('Error cargando pasivos:', err));
   }, [axiosConfig]);
 
-  // Detectar instructor vinculado cada vez que cambia el instructor o las horas
   useEffect(() => {
     if (!formData.instructor || pasivos.length === 0) {
       setPasivoVinculado(null);
       setDeudaCalculada(0);
       return;
     }
-    const match = pasivos.find(p => {
+    const match = pasivos.find((p) => {
       const { esInstructor } = decodeTarifa(p.descripcion);
       return esInstructor && p.titulo.toLowerCase() === formData.instructor.toLowerCase();
     });
@@ -50,16 +114,12 @@ const Ingreso = ({ formData, handleChange, handleSubmit: originalHandleSubmit, I
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setGuardando(true);
 
-    // 1. Guardar el ingreso normalmente
     await originalHandleSubmit(e);
 
     const actividad = formData.actividad === 'Otro' ? formData.actividadOtro : formData.actividad;
 
-    // 2. Acumular deuda al pasivo del instructor (por horas trabajadas)
-    // Nota: el reparto de % (Jose/Igna/Hans) NO se acumula acá — se hace
-    // centralizadamente en ReporteEstadisticas.jsx al momento de asignar
-    // la clase, para tener todos los números en un solo lugar.
     if (pasivoVinculado && deudaCalculada > 0 && axiosConfig) {
       try {
         const { tarifaHora } = decodeTarifa(pasivoVinculado.descripcion);
@@ -84,245 +144,224 @@ const Ingreso = ({ formData, handleChange, handleSubmit: originalHandleSubmit, I
         );
       } catch (err) {
         console.error('Error al acumular deuda instructor:', err);
-        alert(`⚠️ El ingreso se guardó pero no se pudo acumular a ${pasivoVinculado.titulo}. Revisá en Cuentas Corrientes.`);
+        alert(`El ingreso se guardó, pero no se pudo acumular a ${pasivoVinculado.titulo}. Revisá en Cuentas Corrientes.`);
       }
     }
+
+    setGuardando(false);
   };
 
+  const tarifaInstructor = pasivoVinculado ? decodeTarifa(pasivoVinculado.descripcion).tarifaHora : null;
+  const horasIngresadas = parseFloat(formData.horas) > 0;
+  const total = parseFloat(formData.total) || 0;
+
   return (
-    <div className="max-w-2xl mx-auto bg-white p-8 rounded-lg shadow-md mt-10">
-      <button
-        onClick={() => setView('AGENDA')}
-        className="mb-4 text-xs font-bold text-gray-400 hover:text-indigo-600 transition-colors uppercase tracking-widest"
-      >
-        ← Volver a Agenda
-      </button>
-
-      <h2 className="text-2xl font-bold mb-6 text-green-600">💰 Nueva Planilla de Ingreso</h2>
-
-      <form onSubmit={handleSubmit} className="space-y-4">
-
-        <div className="space-y-1">
-          <InstructorField />
+    <div style={{ maxWidth: 640, margin: '0 auto', padding: '0 4px 60px' }}>
+      {/* ── Header de pantalla ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+        <button
+          onClick={() => setView('AGENDA')}
+          style={{
+            width: 36, height: 36, borderRadius: 10, border: `0.5px solid ${NA.border}`,
+            background: '#fff', color: NA.text2, display: 'flex', alignItems: 'center',
+            justifyContent: 'center', cursor: 'pointer', flexShrink: 0,
+          }}
+          aria-label="Volver a agenda"
+        >
+          <i className="ti ti-arrow-left" style={{ fontSize: 17 }} aria-hidden="true" />
+        </button>
+        <div>
+          <h1 style={{ fontSize: 19, fontWeight: 500, color: NA.text, margin: 0 }}>Nuevo ingreso</h1>
+          <p style={{ fontSize: 12, color: NA.text2, margin: '2px 0 0' }}>Registrá una clase, rental u otro cobro</p>
         </div>
+      </div>
 
-        {/* Banner instructor vinculado */}
-        {pasivoVinculado && (
-          <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 flex items-start gap-3">
-            <span className="text-2xl">🎓</span>
-            <div>
-              <p className="text-xs font-black text-indigo-700 uppercase">Cuenta corriente vinculada</p>
-              <p className="text-[11px] text-indigo-500 font-bold mt-0.5">
-                {pasivoVinculado.titulo} · {decodeTarifa(pasivoVinculado.descripcion).tarifaHora} BRL/h
-              </p>
-              {deudaCalculada > 0 ? (
-                <p className="text-xs font-black text-rose-600 mt-1">
-                  Se acumularán <span className="text-rose-700">{deudaCalculada.toFixed(2)} BRL</span> al guardar
-                  <span className="text-indigo-400 font-bold"> ({parseFloat(formData.horas) || 0}h × {decodeTarifa(pasivoVinculado.descripcion).tarifaHora} BRL/h)</span>
+      <form onSubmit={handleSubmit}>
+        {/* ── Card principal: datos de la operación ── */}
+        <div style={{ background: '#fff', borderRadius: 16, border: `0.5px solid ${NA.border}`, padding: 22, marginBottom: 16 }}>
+
+          <Field label="Instructor responsable">
+            <InstructorField />
+          </Field>
+
+          {/* ── Estado de vínculo con cuenta corriente ── */}
+          {pasivoVinculado ? (
+            <div style={{
+              background: NA.light, borderRadius: 12, padding: '12px 14px', marginBottom: 16,
+              display: 'flex', gap: 10, alignItems: 'flex-start',
+            }}>
+              <i className="ti ti-link" style={{ fontSize: 17, color: NA.dark, marginTop: 1 }} aria-hidden="true" />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontSize: 13, fontWeight: 500, color: NA.darker, margin: 0 }}>
+                  {pasivoVinculado.titulo} <span style={{ color: NA.text2, fontWeight: 400 }}>· {tarifaInstructor} BRL/h</span>
                 </p>
-              ) : (
-                <p className="text-[11px] text-amber-600 font-bold mt-1">⚠️ Ingresá las horas para calcular la deuda.</p>
-              )}
+                {horasIngresadas ? (
+                  <p style={{ fontSize: 13, color: NA.dark, margin: '4px 0 0' }}>
+                    Se sumarán <strong>{deudaCalculada.toFixed(2)} BRL</strong> a su cuenta corriente al guardar
+                  </p>
+                ) : (
+                  <p style={{ fontSize: 12, color: '#92400E', margin: '4px 0 0' }}>
+                    <i className="ti ti-alert-triangle" style={{ fontSize: 13, marginRight: 4 }} aria-hidden="true" />
+                    Cargá las horas para calcular el monto
+                  </p>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          ) : (
+            formData.instructor && formData.instructor !== 'Secretaria' && (
+              <div style={{
+                background: '#f9fafb', borderRadius: 12, padding: '10px 14px', marginBottom: 16,
+                fontSize: 12, color: '#9ca3af', display: 'flex', gap: 8, alignItems: 'flex-start',
+              }}>
+                <i className="ti ti-info-circle" style={{ fontSize: 15, marginTop: 1 }} aria-hidden="true" />
+                <span>{formData.instructor} no tiene cuenta corriente vinculada. Se puede crear desde Cuentas Corrientes.</span>
+              </div>
+            )
+          )}
 
-        {/* Aviso sin cuenta corriente */}
-        {!pasivoVinculado && formData.instructor && formData.instructor !== 'Secretaria' && (
-          <div className="bg-gray-50 border border-gray-200 rounded-2xl p-3 text-[11px] text-gray-400 font-bold">
-            ℹ️ <span className="text-gray-600">{formData.instructor}</span> no tiene cuenta corriente vinculada.
-            Creala en <span className="text-indigo-600">Cuentas Corrientes → 🎓 Instructor</span>.
+          <div style={{ ...sx.row, gridTemplateColumns: '1fr 1fr' }}>
+            <Field label="Fecha">
+              <TextInput type="date" name="fecha" value={formData.fecha} onChange={handleChange} required />
+            </Field>
+            <Field label="Actividad">
+              <Select name="actividad" value={formData.actividad} onChange={handleChange} required>
+                <option value="">Seleccionar...</option>
+                {ACTIVIDADES.map((a) => <option key={a} value={a}>{a === 'Otro' ? 'Otra...' : a}</option>)}
+              </Select>
+            </Field>
           </div>
-        )}
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Fecha</label>
-          <input
-            type="date"
-            name="fecha"
-            value={formData.fecha}
-            onChange={handleChange}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 border p-2 text-sm"
-            required
-          />
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Actividad</label>
-            <select
-              name="actividad"
-              value={formData.actividad}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border p-2 border-gray-300 text-sm focus:border-green-500 focus:ring-green-500"
-              required
-            >
-              <option value="">Seleccionar actividad</option>
-              <option value="Clase de Kite">Clase de Kite</option>
-              <option value="Clase de Wing">Clase de Wing</option>
-              <option value="Clase de Windsurf">Clase de Windsurf</option>
-              <option value="Rental">Rental</option>
-              <option value="Otro">Otro...</option>
-            </select>
-          </div>
           {formData.actividad === 'Otro' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Especificar actividad</label>
+            <Field label="Especificar actividad">
+              <TextInput type="text" name="actividadOtro" value={formData.actividadOtro || ''} onChange={handleChange} placeholder="Ej: Aula teórica" />
+            </Field>
+          )}
+
+          <Field label="Vendedor (opcional)">
+            <TextInput type="text" name="vendedor" value={formData.vendedor || ''} onChange={handleChange} />
+          </Field>
+
+          <Field label="Detalles">
+            <textarea
+              name="detalles" rows={2} value={formData.detalles || ''} onChange={handleChange}
+              placeholder="Ej: Clase a José"
+              style={{ ...sx.input, resize: 'vertical', fontFamily: 'inherit' }}
+              onFocus={focusOn}
+              onBlur={focusOff}
+            />
+          </Field>
+        </div>
+
+        {/* ── Card: cálculo del cobro ── */}
+        <div style={{ background: NA.darker, borderRadius: 16, padding: 22, marginBottom: 16 }}>
+          <p style={{ fontSize: 11, color: 'rgba(255,255,255,.55)', textTransform: 'uppercase', letterSpacing: '.08em', margin: '0 0 14px' }}>
+            Cálculo del cobro
+          </p>
+
+          <div style={{ ...sx.row, gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: 4 }}>
+            <Field label={<span style={{ color: 'rgba(255,255,255,.6)' }}>Horas</span>}>
               <input
-                type="text"
-                name="actividadOtro"
-                value={formData.actividadOtro || ''}
-                onChange={handleChange}
-                placeholder="Ej: Aula teórica"
-                className="mt-1 block w-full rounded-md border p-2 border-gray-300 text-sm"
+                type="number" step="0.5" name="horas" inputMode="decimal" value={formData.horas} onChange={handleChange}
+                style={{ ...sx.input, background: 'rgba(255,255,255,.08)', border: '0.5px solid rgba(255,255,255,.15)', color: '#fff' }}
               />
+            </Field>
+            <Field label={<span style={{ color: 'rgba(255,255,255,.6)' }}>Tarifa ($/h)</span>}>
+              <input
+                type="number" name="tarifa" inputMode="decimal" value={formData.tarifa} onChange={handleChange}
+                style={{ ...sx.input, background: 'rgba(255,255,255,.08)', border: '0.5px solid rgba(255,255,255,.15)', color: '#fff' }}
+              />
+            </Field>
+            <div>
+              <label style={{ ...sx.label, color: 'rgba(255,255,255,.6)' }}>Total</label>
+              <div style={{
+                padding: '11px 13px', borderRadius: 10, background: NA.primary, color: NA.darker,
+                fontSize: 16, fontWeight: 600, textAlign: 'right',
+              }}>
+                {total.toFixed(2)}
+              </div>
             </div>
-          )}
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Vendedor (Opcional)</label>
-          <input
-            type="text"
-            name="vendedor"
-            value={formData.vendedor || ''}
-            onChange={handleChange}
-            className="mt-1 block w-full rounded-md border p-2 border-gray-300 text-sm focus:border-green-500 focus:ring-green-500"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Detalles</label>
-          <textarea
-            name="detalles"
-            rows="2"
-            value={formData.detalles || ''}
-            onChange={handleChange}
-            className="mt-1 block w-full rounded-md border p-2 border-gray-300 text-sm focus:border-green-500 focus:ring-green-500"
-            placeholder="Ej: Clase a José"
-          />
-        </div>
-
-        <div className="grid grid-cols-3 gap-4 bg-green-50 p-4 rounded-md">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Cant. Horas</label>
-            <input
-              type="number"
-              step="0.5"
-              name="horas"
-              inputMode="decimal"
-              value={formData.horas}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border p-2 border-gray-300 text-sm focus:border-green-500 focus:ring-green-500"
-            />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Tarifa ($/h)</label>
-            <input
-              type="number"
-              name="tarifa"
-              inputMode="decimal"
-              value={formData.tarifa}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border p-2 border-gray-300 text-sm focus:border-green-500 focus:ring-green-500"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-bold text-green-800">TOTAL</label>
-            <input
-              type="number"
-              value={formData.total}
-              readOnly
-              className="mt-1 block w-full rounded-md border p-2 bg-white font-bold text-green-600 text-sm"
-            />
+
+          <div style={{ ...sx.row, gridTemplateColumns: 'repeat(3, 1fr)', marginTop: 16, marginBottom: 0 }}>
+            <Field label={<span style={{ color: 'rgba(255,255,255,.6)' }}>Moneda</span>}>
+              <select
+                name="moneda" value={formData.moneda} onChange={handleChange}
+                style={{ ...sx.input, background: 'rgba(255,255,255,.08)', border: '0.5px solid rgba(255,255,255,.15)', color: '#fff', cursor: 'pointer' }}
+              >
+                {MONEDAS.map((m, i) => m.divider
+                  ? <option key={`div-${i}`} disabled>──────────</option>
+                  : <option key={m.value} value={m.value}>{m.label}</option>
+                )}
+              </select>
+            </Field>
+            <Field label={<span style={{ color: 'rgba(255,255,255,.6)' }}>Gastos</span>}>
+              <input
+                type="number" name="gastos" inputMode="decimal" value={formData.gastos} onChange={handleChange}
+                style={{ ...sx.input, background: 'rgba(255,255,255,.08)', border: '0.5px solid rgba(255,255,255,.15)', color: '#fff' }}
+              />
+            </Field>
+            <Field label={<span style={{ color: 'rgba(255,255,255,.6)' }}>Comisión</span>}>
+              <input
+                type="number" name="comision" inputMode="decimal" value={formData.comision} onChange={handleChange}
+                style={{ ...sx.input, background: 'rgba(255,255,255,.08)', border: '0.5px solid rgba(255,255,255,.15)', color: '#fff' }}
+              />
+            </Field>
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-4 mt-2 bg-green-50 p-4 rounded-md">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Moneda</label>
-            <select
-              name="moneda"
-              value={formData.moneda}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border p-2 border-gray-300 text-sm focus:border-green-500 focus:ring-green-500"
-            >
-              <option value="BRL">Reales (BRL)</option>
-              <option value="USD">Dólares (USD)</option>
-              <option value="EUR">Euros (EUR)</option>
-              <option value="ARS">Pesos (ARS)</option>
-              <option value="CLP">Pesos Chilenos (CLP)</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Gastos</label>
-            <input
-              type="number"
-              name="gastos"
-              inputMode="decimal"
-              value={formData.gastos}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border p-2 border-gray-300 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Comisión</label>
-            <input
-              type="number"
-              name="comision"
-              inputMode="decimal"
-              value={formData.comision}
-              onChange={handleChange}
-              className="mt-1 block w-full rounded-md border p-2 border-gray-300 text-sm"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Forma de Pago</label>
-          <select
-            name="formaPago"
-            value={formData.formaPago}
-            onChange={handleChange}
-            className="mt-1 block w-full rounded-md border p-2 border-gray-300 text-sm focus:border-green-500 focus:ring-green-500"
-          >
-            <option value="Efectivo">Efectivo</option>
-            <option value="MercadoPago">MercadoPago</option>
-            <option value="Transferencia">Transferencia</option>
-            <option value="Tarjeta de Crédito">Tarjeta de Crédito</option>
-            <option value="USD">USD</option>
-            <option value="Otro">Otro...</option>
-          </select>
+        {/* ── Card: forma de pago ── */}
+        <div style={{ background: '#fff', borderRadius: 16, border: `0.5px solid ${NA.border}`, padding: 22, marginBottom: 16 }}>
+          <Field label="Forma de pago">
+            <Select name="formaPago" value={formData.formaPago} onChange={handleChange}>
+              {FORMAS_PAGO.map((f) => <option key={f} value={f}>{f === 'Otro' ? 'Otra...' : f}</option>)}
+            </Select>
+          </Field>
           {formData.formaPago === 'Otro' && (
-            <input
-              type="text"
-              placeholder="Detalle forma de pago"
-              name="formaPagoOtro"
-              value={formData.formaPagoOtro || ''}
-              onChange={handleChange}
-              className="mt-2 block w-full rounded-md border p-2 border-gray-300 text-sm"
-            />
+            <Field label="Especificar forma de pago">
+              <TextInput type="text" name="formaPagoOtro" value={formData.formaPagoOtro || ''} onChange={handleChange} />
+            </Field>
           )}
         </div>
 
-        {/* Resumen antes de guardar */}
+        {/* ── Resumen final antes de guardar ── */}
         {pasivoVinculado && deudaCalculada > 0 && (
-          <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4">
-            <p className="text-xs font-black text-rose-700 uppercase mb-1">Resumen al guardar</p>
-            <p className="text-[11px] text-rose-500 font-bold">
-              ✅ Se registra el ingreso normalmente.<br />
-              📋 Se suma <strong>{deudaCalculada.toFixed(2)} BRL</strong> a la cuenta de <strong>{pasivoVinculado.titulo}</strong> con nota en el historial.
+          <div style={{
+            display: 'flex', gap: 10, alignItems: 'flex-start',
+            background: NA.light, borderRadius: 12, padding: '12px 14px', marginBottom: 16,
+          }}>
+            <i className="ti ti-circle-check" style={{ fontSize: 17, color: NA.dark, marginTop: 1 }} aria-hidden="true" />
+            <p style={{ fontSize: 13, color: NA.darker, margin: 0, lineHeight: 1.5 }}>
+              Se registra el ingreso y se suma <strong>{deudaCalculada.toFixed(2)} BRL</strong> al historial de <strong>{pasivoVinculado.titulo}</strong> en Cuentas Corrientes.
             </p>
           </div>
         )}
 
         <button
           type="submit"
-          className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-bold text-white bg-green-600 hover:bg-green-700 transition-all uppercase tracking-widest"
+          disabled={guardando}
+          style={{
+            width: '100%', padding: '15px', borderRadius: 12, border: 'none',
+            background: guardando ? NA.mid : NA.dark, color: '#fff',
+            fontSize: 14, fontWeight: 500, cursor: guardando ? 'default' : 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            transition: 'background .15s',
+          }}
         >
-          Guardar Ingreso
+          {guardando ? (
+            <>
+              <i className="ti ti-loader-2" style={{ fontSize: 17, animation: 'kbn-spin .7s linear infinite' }} aria-hidden="true" />
+              Guardando...
+            </>
+          ) : (
+            <>
+              <i className="ti ti-check" style={{ fontSize: 17 }} aria-hidden="true" />
+              Guardar ingreso
+            </>
+          )}
         </button>
       </form>
+
+      <style>{`@keyframes kbn-spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 };

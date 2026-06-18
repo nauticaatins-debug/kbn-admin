@@ -28,8 +28,11 @@ public class ClaseController {
     // --- DTO INTERNO PARA ASIGNACIONES ---
     public static class AsignacionRequest {
         private String asignadoA;
+        private String detalles;
         public String getAsignadoA() { return asignadoA; }
         public void setAsignadoA(String asignadoA) { this.asignadoA = asignadoA; }
+        public String getDetalles() { return detalles; }
+        public void setDetalles(String detalles) { this.detalles = detalles; }
     }
 
     /**
@@ -74,6 +77,9 @@ public class ClaseController {
 
                     registro.setAsignadoA(request.getAsignadoA());
                     registro.setRevisado(true);
+                    if (request.getDetalles() != null) {
+                        registro.setDetalles(request.getDetalles());
+                    }
 
                     claseRepository.save(registro);
                     return ResponseEntity.ok("Asignación actualizada correctamente.");

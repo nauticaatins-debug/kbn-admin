@@ -1,10 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
-// ─────────────────────────────────────────────────────────────────
-// Helpers para guardar la tarifa dentro del campo descripcion
-// Formato interno: "__tarifa__:120||Descripción visible"
-// ─────────────────────────────────────────────────────────────────
+// ── Paleta Náutica Atins ───────────────────────────────────────────────────
+const NA = {
+  primary: '#1ABFA0',
+  dark: '#0F6E56',
+  darker: '#085041',
+  light: '#E1F5EE',
+  mid: '#9FE1CB',
+  bg: '#f0faf7',
+  text: '#0a2e27',
+  text2: '#3a6b5e',
+  border: '#c5e8df',
+};
+
 const TARIFA_PREFIX = '__tarifa__:';
 
 const encodeTarifa = (tarifaHora, descripcion) => {
@@ -23,6 +32,54 @@ const decodeTarifa = (descripcionRaw) => {
   return { tarifaHora, descripcion, esInstructor: true };
 };
 
+// ── Estilos reutilizables ───────────────────────────────────────────────
+const sx = {
+  label: { fontSize: 11, color: NA.text2, display: 'block', marginBottom: 5, fontWeight: 500 },
+  input: {
+    width: '100%', padding: '11px 13px', borderRadius: 10,
+    border: `0.5px solid ${NA.border}`, background: '#fff',
+    color: NA.text, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box',
+    transition: 'border-color .15s, box-shadow .15s',
+  },
+  field: { marginBottom: 14 },
+  overlay: {
+    position: 'fixed', inset: 0, background: 'rgba(8,80,65,.45)', backdropFilter: 'blur(4px)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 16,
+  },
+  modal: {
+    background: '#fff', borderRadius: 20, padding: 28, width: '100%', maxWidth: 440,
+    maxHeight: '90vh', overflowY: 'auto', boxSizing: 'border-box',
+  },
+};
+
+const focusOn = (e) => { e.target.style.borderColor = NA.primary; e.target.style.boxShadow = `0 0 0 3px ${NA.light}`; };
+const focusOff = (e) => { e.target.style.borderColor = NA.border; e.target.style.boxShadow = 'none'; };
+
+const Field = ({ label, children }) => (
+  <div style={sx.field}>
+    <label style={sx.label}>{label}</label>
+    {children}
+  </div>
+);
+
+const TextInput = (props) => <input {...props} style={{ ...sx.input, ...(props.style || {}) }} onFocus={focusOn} onBlur={focusOff} />;
+const Select = ({ children, ...props }) => (
+  <select {...props} style={{ ...sx.input, cursor: 'pointer', ...(props.style || {}) }} onFocus={focusOn} onBlur={focusOff}>{children}</select>
+);
+
+// ── Estado del saldo: color + ícono + etiqueta ───────────────────────────
+const getEstado = (balance) => {
+  if (balance < -0.01) return { color: '#B91C1C', bg: '#FEF2F2', border: '#FECACA', label: 'Les debemos', icon: 'ti-arrow-up-right' };
+  if (balance > 0.01) return { color: NA.dark, bg: NA.light, border: NA.mid, label: 'Nos deben', icon: 'ti-arrow-down-left' };
+  return { color: '#6b7280', bg: '#f9fafb', border: '#e5e7eb', label: 'Saldado', icon: 'ti-check' };
+};
+
+const TX_CONFIG = {
+  NUEVA_DEUDA: { title: 'Registrar deuda nueva', color: '#B91C1C', bg: '#FEF2F2', icon: 'ti-trending-down', showFormaPago: false },
+  PAGO_DEUDA: { title: 'Registrar pago de deuda', color: '#92400E', bg: '#FFFBEB', icon: 'ti-receipt', showFormaPago: true },
+  ADELANTO: { title: 'Dar adelanto', color: NA.dark, bg: NA.light, icon: 'ti-trending-up', showFormaPago: true },
+};
+
 const Pasivos = ({ axiosConfig, setView }) => {
   const [pasivos, setPasivos] = useState([]);
   const [selectedPasivo, setSelectedPasivo] = useState(null);
@@ -33,18 +90,13 @@ const Pasivos = ({ axiosConfig, setView }) => {
   const [showEditModal, setShowEditModal] = useState(false);
 
   const [transactionType, setTransactionType] = useState('PAGO_DEUDA');
+  const [guardando, setGuardando] = useState(false);
 
   const today = new Date().toISOString().split('T')[0];
 
   const initialPasivoForm = {
-    titulo: '',
-    descripcion: '',
-    tarifaHora: '',
-    esInstructor: false,
-    montoInicial: '',
-    moneda: 'BRL',
-    fecha: today,
-    tipoRegistro: 'DEUDA',
+    titulo: '', descripcion: '', tarifaHora: '', esInstructor: false,
+    montoInicial: '', moneda: 'BRL', fecha: today, tipoRegistro: 'DEUDA',
   };
   const [newPasivo, setNewPasivo] = useState(initialPasivoForm);
   const [editPasivo, setEditPasivo] = useState({});
@@ -69,6 +121,7 @@ const Pasivos = ({ axiosConfig, setView }) => {
   // ─── CREAR ────────────────────────────────────────────────────
   const handleCreatePasivo = async (e) => {
     e.preventDefault();
+    setGuardando(true);
     try {
       const monto = parseFloat(newPasivo.montoInicial) || 0;
       const esAdelanto = newPasivo.tipoRegistro === 'ADELANTO';
@@ -114,45 +167,37 @@ const Pasivos = ({ axiosConfig, setView }) => {
     } catch (err) {
       console.error(err);
       alert('Error al guardar.');
+    } finally {
+      setGuardando(false);
     }
   };
 
   // ─── TRANSACCIÓN ──────────────────────────────────────────────
   const handleTransactionSubmit = async (e) => {
     e.preventDefault();
+    setGuardando(true);
     try {
       const monto = parseFloat(transactionData.monto);
-
       const nota = transactionData.detalles || `${
         transactionType === 'NUEVA_DEUDA' ? 'Nueva deuda'
         : transactionType === 'ADELANTO' ? 'Adelanto'
         : 'Pago'
       }: ${selectedPasivo.titulo}`;
 
-      if (transactionType === 'NUEVA_DEUDA') {
-        // NUEVA_DEUDA: el backend suma al montoTotal, así que mandamos negativo para que reste
-        // y el historial queda registrado con montoPagado negativo (deuda)
-        await axios.post(
-          'https://kbn-admin-production.up.railway.app/api/clases/guardar',
-          {
+      const payload = transactionType === 'NUEVA_DEUDA'
+        ? {
             tipoTransaccion: 'EGRESO',
             tipoMovimientoPasivo: 'NUEVA_DEUDA',
             pasivoId: selectedPasivo.id,
-            total: String(-Math.abs(monto)),   // negativo → backend resta del saldo
+            total: String(-Math.abs(monto)),
             fecha: transactionData.fecha,
             moneda: selectedPasivo.moneda,
             formaPago: 'Efectivo',
             detalles: nota,
             actividad: 'Pago Pasivo',
             instructor: 'Secretaria',
-          },
-          axiosConfig
-        );
-      } else {
-        // PAGO_DEUDA / ADELANTO: el backend suma (reduce deuda negativa o acumula adelanto)
-        await axios.post(
-          'https://kbn-admin-production.up.railway.app/api/clases/guardar',
-          {
+          }
+        : {
             tipoTransaccion: 'EGRESO',
             tipoMovimientoPasivo: transactionType,
             pasivoId: selectedPasivo.id,
@@ -163,23 +208,25 @@ const Pasivos = ({ axiosConfig, setView }) => {
             detalles: nota,
             actividad: 'Pago Pasivo',
             instructor: 'Secretaria',
-          },
-          axiosConfig
-        );
-      }
+          };
+
+      await axios.post('https://kbn-admin-production.up.railway.app/api/clases/guardar', payload, axiosConfig);
 
       setShowTransactionModal(false);
       setTransactionData(initialTransactionForm);
-      setTimeout(() => { fetchPasivos(); alert('Operación realizada con éxito.'); }, 1000);
+      setTimeout(() => { fetchPasivos(); }, 800);
     } catch (err) {
       console.error(err);
       alert('Error en la transacción.');
+    } finally {
+      setGuardando(false);
     }
   };
 
   // ─── EDITAR ───────────────────────────────────────────────────
   const handleEditSubmit = async (e) => {
     e.preventDefault();
+    setGuardando(true);
     try {
       const descripcionEncoded = editDecoded.esInstructor
         ? encodeTarifa(editDecoded.tarifaHora, editDecoded.descripcion)
@@ -192,341 +239,343 @@ const Pasivos = ({ axiosConfig, setView }) => {
       );
       setShowEditModal(false);
       fetchPasivos();
-      alert('Datos actualizados');
     } catch (err) {
       console.error(err);
-      alert('Error al actualizar');
+      alert('Error al actualizar.');
+    } finally {
+      setGuardando(false);
     }
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('¿Eliminar esta cuenta corriente?')) {
-      try {
-        await axios.delete(`https://kbn-admin-production.up.railway.app/api/pasivos/${id}`, axiosConfig);
-        fetchPasivos();
-      } catch (err) {
-        alert('Error al eliminar.');
-      }
+    if (!window.confirm('¿Eliminar esta cuenta corriente? Esta acción no se puede deshacer.')) return;
+    try {
+      await axios.delete(`https://kbn-admin-production.up.railway.app/api/pasivos/${id}`, axiosConfig);
+      fetchPasivos();
+    } catch (err) {
+      alert('Error al eliminar.');
     }
   };
 
-  // ─── UI HELPERS ───────────────────────────────────────────────
-  const getCardStyle = (balance) => {
-    if (balance < -0.01) return {
-      border: 'border-rose-500', bg: 'bg-rose-50',
-      text: 'text-rose-600', badge: 'bg-rose-100 text-rose-700', label: 'Les debemos',
-    };
-    if (balance > 0.01) return {
-      border: 'border-emerald-500', bg: 'bg-emerald-50',
-      text: 'text-emerald-600', badge: 'bg-emerald-100 text-emerald-700', label: 'Nos deben',
-    };
-    return {
-      border: 'border-gray-300', bg: 'bg-gray-50',
-      text: 'text-gray-400', badge: 'bg-gray-100 text-gray-600', label: 'Saldado',
-    };
-  };
-
-  const transactionConfig = {
-    NUEVA_DEUDA: {
-      title: 'Registrar Deuda Nueva',
-      borderColor: 'border-rose-500',
-      btnColor: 'bg-rose-600 hover:bg-rose-700',
-      textColor: 'text-rose-600',
-      showFormaPago: false,
-    },
-    PAGO_DEUDA: {
-      title: 'Registrar Pago de Deuda',
-      borderColor: 'border-amber-500',
-      btnColor: 'bg-amber-500 hover:bg-amber-600',
-      textColor: 'text-amber-600',
-      showFormaPago: true,
-    },
-    ADELANTO: {
-      title: 'Dar Adelanto',
-      borderColor: 'border-emerald-500',
-      btnColor: 'bg-emerald-600 hover:bg-emerald-700',
-      textColor: 'text-emerald-600',
-      showFormaPago: true,
-    },
-  };
-
   return (
-    <div className="max-w-6xl mx-auto p-4 animate-fadeIn">
+    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 4px 60px' }}>
 
-      {/* HEADER */}
-      <div className="flex justify-between items-center mb-6 bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-        <div>
-          <h2 className="text-3xl font-black uppercase text-gray-800 italic tracking-tighter">Cuentas Corrientes</h2>
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Gestión de Deudas, Adelantos e Instructores</p>
+      {/* ── Header ── */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {setView && (
+            <button
+              onClick={() => setView('INICIO')}
+              style={{ width: 36, height: 36, borderRadius: 10, border: `0.5px solid ${NA.border}`, background: '#fff', color: NA.text2, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+              aria-label="Volver"
+            >
+              <i className="ti ti-arrow-left" style={{ fontSize: 17 }} aria-hidden="true" />
+            </button>
+          )}
+          <div>
+            <h1 style={{ fontSize: 19, fontWeight: 500, color: NA.text, margin: 0 }}>Cuentas corrientes</h1>
+            <p style={{ fontSize: 12, color: NA.text2, margin: '2px 0 0' }}>Deudas, adelantos e instructores</p>
+          </div>
         </div>
-        <button onClick={() => setView('INICIO')} className="bg-gray-100 hover:bg-gray-200 text-gray-600 px-6 py-3 rounded-2xl font-black text-xs uppercase transition-all">
-          ← Volver
+
+        <button
+          onClick={() => setShowCreateModal(true)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px',
+            background: NA.dark, color: '#fff', border: 'none', borderRadius: 10,
+            fontSize: 13, fontWeight: 500, cursor: 'pointer',
+          }}
+        >
+          <i className="ti ti-plus" style={{ fontSize: 16 }} aria-hidden="true" />
+          Nueva cuenta
         </button>
       </div>
 
-      {/* LEYENDA */}
-      <div className="flex gap-3 mb-6 flex-wrap">
-        <span className="flex items-center gap-2 bg-rose-50 text-rose-700 text-[10px] font-black uppercase px-4 py-2 rounded-full">
-          <span className="w-2 h-2 rounded-full bg-rose-500 inline-block" /> Les debemos = rojo
-        </span>
-        <span className="flex items-center gap-2 bg-emerald-50 text-emerald-700 text-[10px] font-black uppercase px-4 py-2 rounded-full">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Nos deben = verde
-        </span>
-        <span className="flex items-center gap-2 bg-gray-50 text-gray-500 text-[10px] font-black uppercase px-4 py-2 rounded-full">
-          <span className="w-2 h-2 rounded-full bg-gray-400 inline-block" /> Saldado = gris
-        </span>
-        <span className="flex items-center gap-2 bg-indigo-50 text-indigo-700 text-[10px] font-black uppercase px-4 py-2 rounded-full">
-          <span className="w-2 h-2 rounded-full bg-indigo-500 inline-block" /> 🎓 Instructor = tarifa automática
+      {/* ── Leyenda ── */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+        {[
+          { color: '#B91C1C', bg: '#FEF2F2', label: 'Les debemos' },
+          { color: NA.dark, bg: NA.light, label: 'Nos deben' },
+          { color: '#6b7280', bg: '#f9fafb', label: 'Saldado' },
+        ].map((l) => (
+          <span key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 6, background: l.bg, color: l.color, fontSize: 11, fontWeight: 500, padding: '4px 12px', borderRadius: 99 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: l.color }} />
+            {l.label}
+          </span>
+        ))}
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#EEF2FF', color: '#4338CA', fontSize: 11, fontWeight: 500, padding: '4px 12px', borderRadius: 99 }}>
+          <i className="ti ti-school" style={{ fontSize: 13 }} aria-hidden="true" />
+          Instructor = tarifa automática
         </span>
       </div>
 
-      {/* BOTÓN CREAR */}
-      <button
-        onClick={() => setShowCreateModal(true)}
-        className="w-full mb-8 bg-indigo-600 hover:bg-indigo-700 text-white p-6 rounded-[2rem] shadow-xl shadow-indigo-100 flex items-center justify-center gap-3 transition-all group"
-      >
-        <span className="text-2xl font-black group-hover:scale-110 transition-transform">+ Nueva Cuenta Corriente</span>
-      </button>
-
-      {/* GRID DE TARJETAS */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {pasivos.map((p) => {
-          const balance = getBalance(p);
-          const style = getCardStyle(balance);
-          const decoded = decodeTarifa(p.descripcion);
-          return (
-            <div key={p.id} className={`bg-white rounded-[2.5rem] p-6 shadow-sm border-t-[12px] flex flex-col transition-all hover:shadow-md ${style.border}`}>
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex flex-col gap-1">
-                  <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase ${style.badge}`}>
-                    {style.label}
-                  </span>
-                  {decoded.esInstructor && (
-                    <span className="text-[10px] font-black px-3 py-1 rounded-full uppercase bg-indigo-100 text-indigo-700">
-                      🎓 Instructor · {decoded.tarifaHora} BRL/h
+      {/* ── Grid de tarjetas ── */}
+      {pasivos.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '60px 20px', color: NA.text2, background: '#fff', borderRadius: 16, border: `0.5px solid ${NA.border}` }}>
+          <i className="ti ti-wallet-off" style={{ fontSize: 32, opacity: 0.4 }} aria-hidden="true" />
+          <p style={{ fontSize: 14, margin: '10px 0 0' }}>Todavía no hay cuentas corrientes creadas.</p>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+          {pasivos.map((p) => {
+            const balance = getBalance(p);
+            const estado = getEstado(balance);
+            const decoded = decodeTarifa(p.descripcion);
+            return (
+              <div key={p.id} style={{
+                background: '#fff', borderRadius: 16, border: `0.5px solid ${NA.border}`,
+                borderTop: `3px solid ${estado.color}`, padding: 20, display: 'flex', flexDirection: 'column',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 500, padding: '3px 10px', borderRadius: 99, background: estado.bg, color: estado.color, textTransform: 'uppercase', letterSpacing: '.04em', width: 'fit-content' }}>
+                      <i className={`ti ${estado.icon}`} style={{ fontSize: 12 }} aria-hidden="true" />
+                      {estado.label}
                     </span>
-                  )}
+                    {decoded.esInstructor && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 500, padding: '3px 10px', borderRadius: 99, background: '#EEF2FF', color: '#4338CA', width: 'fit-content' }}>
+                        <i className="ti ti-school" style={{ fontSize: 12 }} aria-hidden="true" />
+                        {decoded.tarifaHora} BRL/h
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 2 }}>
+                    <button
+                      onClick={() => { setEditPasivo(p); setEditDecoded(decodeTarifa(p.descripcion)); setShowEditModal(true); }}
+                      style={{ width: 30, height: 30, borderRadius: 8, border: 'none', background: 'transparent', color: '#9ca3af', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      aria-label="Editar"
+                    >
+                      <i className="ti ti-edit" style={{ fontSize: 16 }} aria-hidden="true" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(p.id)}
+                      style={{ width: 30, height: 30, borderRadius: 8, border: 'none', background: 'transparent', color: '#fca5a5', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      aria-label="Eliminar"
+                    >
+                      <i className="ti ti-trash" style={{ fontSize: 16 }} aria-hidden="true" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => {
-                      setEditPasivo(p);
-                      setEditDecoded(decodeTarifa(p.descripcion));
-                      setShowEditModal(true);
-                    }}
-                    className="p-2 hover:bg-gray-100 rounded-lg text-lg"
-                  >✏️</button>
-                  <button onClick={() => handleDelete(p.id)} className="p-2 hover:bg-rose-50 rounded-lg text-lg">🗑️</button>
+
+                <h3 style={{ fontSize: 16, fontWeight: 500, color: NA.text, margin: '0 0 2px' }}>{p.titulo}</h3>
+                <p style={{ fontSize: 12, color: NA.text2, margin: '0 0 14px', minHeight: 16, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {decoded.descripcion || '—'}
+                </p>
+
+                <div style={{ background: estado.bg, borderRadius: 12, padding: '14px', textAlign: 'center', marginBottom: 16 }}>
+                  <span style={{ display: 'block', fontSize: 10, color: NA.text2, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>Saldo actual</span>
+                  <span style={{ fontSize: 24, fontWeight: 600, color: estado.color }}>
+                    {p.moneda} {Math.abs(balance).toFixed(2)}
+                  </span>
                 </div>
-              </div>
 
-              <h3 className="font-black text-gray-800 uppercase text-xl leading-tight mb-1">{p.titulo}</h3>
-              <p className="text-[11px] text-gray-400 font-bold uppercase mb-4 h-8 overflow-hidden">{decoded.descripcion}</p>
-
-              <div className={`${style.bg} p-5 rounded-3xl mb-6 text-center`}>
-                <span className="block text-[10px] font-black text-gray-400 uppercase mb-1">Saldo Actual</span>
-                <span className={`text-3xl font-black tracking-tighter ${style.text}`}>
-                  {p.moneda} {Math.abs(balance).toFixed(2)}
-                </span>
-              </div>
-
-              <div className="space-y-2 mt-auto">
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    onClick={() => { setTransactionType('NUEVA_DEUDA'); setSelectedPasivo(p); setTransactionData(initialTransactionForm); setShowTransactionModal(true); }}
-                    className="bg-rose-600 hover:bg-rose-700 text-white py-3 rounded-xl font-black text-[9px] uppercase tracking-tighter transition-all"
-                  >+ Deuda</button>
-                  <button
-                    onClick={() => { setTransactionType('PAGO_DEUDA'); setSelectedPasivo(p); setTransactionData(initialTransactionForm); setShowTransactionModal(true); }}
-                    className="bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-xl font-black text-[9px] uppercase tracking-tighter transition-all"
-                  >✓ Pagar</button>
-                  <button
-                    onClick={() => { setTransactionType('ADELANTO'); setSelectedPasivo(p); setTransactionData(initialTransactionForm); setShowTransactionModal(true); }}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl font-black text-[9px] uppercase tracking-tighter transition-all"
-                  >↑ Adelanto</button>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 8 }}>
+                  {[
+                    { type: 'NUEVA_DEUDA', label: 'Deuda', icon: 'ti-trending-down', color: '#B91C1C', bg: '#FEF2F2' },
+                    { type: 'PAGO_DEUDA', label: 'Pagar', icon: 'ti-receipt', color: '#92400E', bg: '#FFFBEB' },
+                    { type: 'ADELANTO', label: 'Adelanto', icon: 'ti-trending-up', color: NA.dark, bg: NA.light },
+                  ].map((b) => (
+                    <button
+                      key={b.type}
+                      onClick={() => { setTransactionType(b.type); setSelectedPasivo(p); setTransactionData(initialTransactionForm); setShowTransactionModal(true); }}
+                      style={{
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+                        padding: '8px 4px', borderRadius: 9, border: 'none', background: b.bg, color: b.color,
+                        fontSize: 10, fontWeight: 500, cursor: 'pointer',
+                      }}
+                    >
+                      <i className={`ti ${b.icon}`} style={{ fontSize: 15 }} aria-hidden="true" />
+                      {b.label}
+                    </button>
+                  ))}
                 </div>
                 <button
                   onClick={() => { setSelectedPasivo(p); setShowHistoryModal(true); }}
-                  className="w-full bg-gray-900 hover:bg-black text-white py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all"
-                >Ver Historial</button>
+                  style={{ width: '100%', padding: '9px', borderRadius: 9, border: `0.5px solid ${NA.border}`, background: 'transparent', color: NA.text2, fontSize: 12, fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                >
+                  <i className="ti ti-history" style={{ fontSize: 14 }} aria-hidden="true" />
+                  Ver historial
+                </button>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
-      {/* ── MODAL CREAR ────────────────────────────────────────── */}
+      {/* ── MODAL: CREAR ── */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4 text-gray-800">
-          <div className="bg-white w-full max-w-md rounded-[3rem] p-10 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <h2 className="font-black uppercase italic mb-2 text-2xl text-center">Nueva Cuenta</h2>
-            <p className="text-center text-[10px] text-gray-400 font-bold uppercase mb-6">Registrá una deuda, adelanto o cuenta de instructor</p>
-            <form onSubmit={handleCreatePasivo} className="space-y-4">
+        <div style={sx.overlay} onClick={() => setShowCreateModal(false)}>
+          <div style={sx.modal} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ fontSize: 18, fontWeight: 500, color: NA.text, margin: '0 0 4px', textAlign: 'center' }}>Nueva cuenta corriente</h2>
+            <p style={{ fontSize: 12, color: NA.text2, textAlign: 'center', margin: '0 0 20px' }}>Registrá una deuda, adelanto o cuenta de instructor</p>
 
-              {/* ¿Es instructor? */}
-              <div>
-                <label className="text-[10px] font-black text-gray-400 uppercase ml-2 mb-1 block">Tipo de cuenta</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setNewPasivo({ ...newPasivo, esInstructor: false })}
-                    className={`py-3 rounded-2xl font-black text-xs uppercase transition-all border-2 ${!newPasivo.esInstructor ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-gray-50 text-gray-500 border-gray-200'}`}
-                  >📋 General</button>
-                  <button
-                    type="button"
-                    onClick={() => setNewPasivo({ ...newPasivo, esInstructor: true, tipoRegistro: 'DEUDA' })}
-                    className={`py-3 rounded-2xl font-black text-xs uppercase transition-all border-2 ${newPasivo.esInstructor ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-gray-50 text-gray-500 border-gray-200'}`}
-                  >🎓 Instructor</button>
+            <form onSubmit={handleCreatePasivo}>
+              <Field label="Tipo de cuenta">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  {[{ v: false, l: 'General', i: 'ti-file-text' }, { v: true, l: 'Instructor', i: 'ti-school' }].map((opt) => (
+                    <button
+                      key={opt.l} type="button"
+                      onClick={() => setNewPasivo({ ...newPasivo, esInstructor: opt.v, tipoRegistro: 'DEUDA' })}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                        padding: '11px', borderRadius: 10, fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                        border: `1.5px solid ${newPasivo.esInstructor === opt.v ? NA.dark : NA.border}`,
+                        background: newPasivo.esInstructor === opt.v ? NA.dark : '#fff',
+                        color: newPasivo.esInstructor === opt.v ? '#fff' : NA.text2,
+                      }}
+                    >
+                      <i className={`ti ${opt.i}`} style={{ fontSize: 15 }} aria-hidden="true" />
+                      {opt.l}
+                    </button>
+                  ))}
                 </div>
-              </div>
+              </Field>
 
-              <input
-                type="text"
-                placeholder={newPasivo.esInstructor ? 'Nombre del instructor (Ej: Facu)' : 'Nombre (Ej: Alquiler Local)'}
-                className="w-full p-4 bg-gray-50 rounded-2xl border-none font-bold outline-none"
-                value={newPasivo.titulo}
-                onChange={(e) => setNewPasivo({ ...newPasivo, titulo: e.target.value })}
-                required
-              />
+              <Field label={newPasivo.esInstructor ? 'Nombre del instructor' : 'Nombre / referencia'}>
+                <TextInput
+                  type="text"
+                  placeholder={newPasivo.esInstructor ? 'Ej: Facundo Moreno' : 'Ej: Alquiler local'}
+                  value={newPasivo.titulo}
+                  onChange={(e) => setNewPasivo({ ...newPasivo, titulo: e.target.value })}
+                  required
+                />
+              </Field>
 
-              {/* Tarifa por hora — solo si es instructor */}
               {newPasivo.esInstructor && (
-                <div className="bg-indigo-50 p-4 rounded-2xl space-y-3">
-                  <label className="text-[10px] font-black text-indigo-600 uppercase block">💰 Tarifa por hora (BRL)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="Ej: 120"
-                    className="w-full p-4 bg-white rounded-2xl border-none font-black text-xl outline-none text-indigo-700"
-                    value={newPasivo.tarifaHora}
-                    onChange={(e) => setNewPasivo({ ...newPasivo, tarifaHora: e.target.value })}
-                    required={newPasivo.esInstructor}
-                  />
-                  <p className="text-[10px] text-indigo-400 font-bold uppercase">
-                    Cada clase guardada en Ingreso sumará automáticamente horas × tarifa a esta cuenta.
+                <div style={{ background: NA.light, borderRadius: 12, padding: 14, marginBottom: 14 }}>
+                  <Field label={<span style={{ color: NA.darker }}>Tarifa por hora (BRL)</span>}>
+                    <input
+                      type="number" step="0.01" placeholder="Ej: 120"
+                      value={newPasivo.tarifaHora}
+                      onChange={(e) => setNewPasivo({ ...newPasivo, tarifaHora: e.target.value })}
+                      required={newPasivo.esInstructor}
+                      style={{ ...sx.input, fontSize: 17, fontWeight: 600, color: NA.darker }}
+                      onFocus={focusOn} onBlur={focusOff}
+                    />
+                  </Field>
+                  <p style={{ fontSize: 11, color: NA.dark, margin: 0 }}>
+                    Cada clase registrada en Ingreso sumará automáticamente horas × tarifa a esta cuenta.
                   </p>
                 </div>
               )}
 
-              {/* Tipo registro — solo para cuentas generales */}
               {!newPasivo.esInstructor && (
-                <div>
-                  <label className="text-[10px] font-black text-gray-400 uppercase ml-2 mb-1 block">¿Qué es?</label>
-                  <select
-                    className="w-full p-4 bg-gray-100 rounded-2xl border-none font-bold outline-none"
-                    value={newPasivo.tipoRegistro}
-                    onChange={(e) => setNewPasivo({ ...newPasivo, tipoRegistro: e.target.value })}
-                  >
+                <Field label="¿Qué es?">
+                  <Select value={newPasivo.tipoRegistro} onChange={(e) => setNewPasivo({ ...newPasivo, tipoRegistro: e.target.value })}>
                     <option value="DEUDA">Deuda — les debemos plata (rojo)</option>
                     <option value="ADELANTO">Adelanto — nos quedan debiendo (verde)</option>
-                  </select>
+                  </Select>
+                </Field>
+              )}
+
+              {!newPasivo.esInstructor && (
+                <div style={{
+                  background: newPasivo.tipoRegistro === 'DEUDA' ? '#FEF2F2' : NA.light,
+                  color: newPasivo.tipoRegistro === 'DEUDA' ? '#B91C1C' : NA.darker,
+                  fontSize: 12, padding: '10px 14px', borderRadius: 10, marginBottom: 14,
+                }}>
+                  {newPasivo.tipoRegistro === 'DEUDA'
+                    ? 'Solo registra la deuda. No sale plata de caja.'
+                    : 'Sale de caja. El saldo queda en verde (nos deben).'}
                 </div>
               )}
 
-              {!newPasivo.esInstructor && newPasivo.tipoRegistro === 'DEUDA' && (
-                <div className="bg-rose-50 text-rose-700 text-[10px] font-black uppercase px-4 py-3 rounded-2xl">
-                  ⚠️ Solo registra la deuda. No sale plata de caja.
-                </div>
-              )}
-              {!newPasivo.esInstructor && newPasivo.tipoRegistro === 'ADELANTO' && (
-                <div className="bg-emerald-50 text-emerald-700 text-[10px] font-black uppercase px-4 py-3 rounded-2xl">
-                  ✓ Sale de caja. El saldo queda en verde (nos deben).
-                </div>
-              )}
-
-              <div>
-                <label className="text-[10px] font-black text-gray-400 uppercase ml-2 mb-1 block">Descripción / Nota</label>
-                <input
-                  type="text"
-                  placeholder="Ej: Pago de clases enero"
-                  className="w-full p-4 bg-gray-50 rounded-2xl border-none font-bold outline-none"
+              <Field label="Descripción / nota">
+                <TextInput
+                  type="text" placeholder="Ej: Pago de clases enero"
                   value={newPasivo.descripcion}
                   onChange={(e) => setNewPasivo({ ...newPasivo, descripcion: e.target.value })}
                 />
-              </div>
+              </Field>
 
-              {/* Monto inicial — para instructores arranca en 0 automáticamente */}
               {!newPasivo.esInstructor && (
-                <div className="grid grid-cols-2 gap-4">
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="Monto inicial"
-                    className="p-4 bg-gray-50 rounded-2xl border-none font-bold outline-none"
-                    value={newPasivo.montoInicial}
-                    onChange={(e) => setNewPasivo({ ...newPasivo, montoInicial: e.target.value })}
-                    required
-                  />
-                  <select
-                    className="p-4 bg-gray-50 rounded-2xl border-none font-bold outline-none"
-                    value={newPasivo.moneda}
-                    onChange={(e) => setNewPasivo({ ...newPasivo, moneda: e.target.value })}
-                  >
-                    <option value="BRL">BRL</option>
-                    <option value="USD">USD</option>
-                    <option value="ARS">ARS</option>
-                  </select>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                  <Field label="Monto inicial">
+                    <TextInput
+                      type="number" step="0.01"
+                      value={newPasivo.montoInicial}
+                      onChange={(e) => setNewPasivo({ ...newPasivo, montoInicial: e.target.value })}
+                      required
+                    />
+                  </Field>
+                  <Field label="Moneda">
+                    <Select value={newPasivo.moneda} onChange={(e) => setNewPasivo({ ...newPasivo, moneda: e.target.value })}>
+                      <option value="BRL">BRL</option>
+                      <option value="USD">USD</option>
+                      <option value="ARS">ARS</option>
+                    </Select>
+                  </Field>
                 </div>
               )}
 
               {newPasivo.esInstructor && (
-                <div className="bg-gray-50 text-gray-500 text-[10px] font-black uppercase px-4 py-3 rounded-2xl">
+                <div style={{ background: '#f9fafb', color: '#6b7280', fontSize: 12, padding: '10px 14px', borderRadius: 10, marginBottom: 14 }}>
                   El saldo arranca en 0. Cada clase registrada acumulará la deuda automáticamente.
                 </div>
               )}
 
-              <div className="flex gap-3 pt-4">
-                <button type="button" onClick={() => setShowCreateModal(false)} className="flex-1 font-black uppercase text-xs text-gray-400">Cancelar</button>
-                <button type="submit" className="flex-[2] bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase text-xs shadow-lg">Crear Cuenta</button>
+              <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+                <button type="button" onClick={() => setShowCreateModal(false)} style={{ flex: 1, padding: '12px', borderRadius: 10, border: `0.5px solid ${NA.border}`, background: '#fff', color: NA.text2, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+                  Cancelar
+                </button>
+                <button type="submit" disabled={guardando} style={{ flex: 2, padding: '12px', borderRadius: 10, border: 'none', background: guardando ? NA.mid : NA.dark, color: '#fff', fontSize: 13, fontWeight: 500, cursor: guardando ? 'default' : 'pointer' }}>
+                  {guardando ? 'Creando...' : 'Crear cuenta'}
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* ── MODAL TRANSACCIÓN ──────────────────────────────────── */}
+      {/* ── MODAL: TRANSACCIÓN ── */}
       {showTransactionModal && selectedPasivo && (() => {
-        const cfg = transactionConfig[transactionType];
+        const cfg = TX_CONFIG[transactionType];
         return (
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4 text-gray-800">
-            <div className={`bg-white w-full max-w-md rounded-[3rem] p-10 shadow-2xl border-t-[15px] ${cfg.borderColor}`}>
-              <h2 className={`font-black uppercase text-2xl text-center mb-1 ${cfg.textColor}`}>{cfg.title}</h2>
-              <p className="text-center text-[10px] font-black text-gray-400 uppercase mb-8 tracking-widest">{selectedPasivo.titulo}</p>
+          <div style={sx.overlay} onClick={() => setShowTransactionModal(false)}>
+            <div style={{ ...sx.modal, borderTop: `4px solid ${cfg.color}` }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ textAlign: 'center', marginBottom: 20 }}>
+                <div style={{ width: 44, height: 44, borderRadius: 12, background: cfg.bg, color: cfg.color, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+                  <i className={`ti ${cfg.icon}`} style={{ fontSize: 22 }} aria-hidden="true" />
+                </div>
+                <h2 style={{ fontSize: 17, fontWeight: 500, color: cfg.color, margin: 0 }}>{cfg.title}</h2>
+                <p style={{ fontSize: 12, color: NA.text2, margin: '4px 0 0' }}>{selectedPasivo.titulo}</p>
+              </div>
 
-              <form onSubmit={handleTransactionSubmit} className="space-y-4">
-                <div className={`grid gap-4 ${cfg.showFormaPago ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="Monto"
-                    className="p-4 bg-gray-50 rounded-2xl border-none font-black text-xl outline-none"
-                    value={transactionData.monto}
-                    onChange={(e) => setTransactionData({ ...transactionData, monto: e.target.value })}
-                    required
-                  />
+              <form onSubmit={handleTransactionSubmit}>
+                <div style={{ display: 'grid', gridTemplateColumns: cfg.showFormaPago ? '1fr 1fr' : '1fr', gap: 12 }}>
+                  <Field label="Monto">
+                    <input
+                      type="number" step="0.01" placeholder="0.00"
+                      value={transactionData.monto}
+                      onChange={(e) => setTransactionData({ ...transactionData, monto: e.target.value })}
+                      required
+                      style={{ ...sx.input, fontSize: 18, fontWeight: 600 }}
+                      onFocus={focusOn} onBlur={focusOff}
+                    />
+                  </Field>
                   {cfg.showFormaPago && (
-                    <select
-                      className="p-4 bg-gray-50 rounded-2xl border-none font-bold outline-none"
-                      value={transactionData.formaPago}
-                      onChange={(e) => setTransactionData({ ...transactionData, formaPago: e.target.value })}
-                    >
-                      <option value="Efectivo">Efectivo</option>
-                      <option value="Transferencia">Transferencia</option>
-                    </select>
+                    <Field label="Forma de pago">
+                      <Select value={transactionData.formaPago} onChange={(e) => setTransactionData({ ...transactionData, formaPago: e.target.value })}>
+                        <option value="Efectivo">Efectivo</option>
+                        <option value="Transferencia">Transferencia</option>
+                      </Select>
+                    </Field>
                   )}
                 </div>
-                <input
-                  type="text"
-                  placeholder="Concepto (Ej: Pago de clases enero)"
-                  className="w-full p-4 bg-gray-50 rounded-2xl border-none font-bold outline-none"
-                  value={transactionData.detalles}
-                  onChange={(e) => setTransactionData({ ...transactionData, detalles: e.target.value })}
-                  required
-                />
-                <div className="flex gap-3 pt-6">
-                  <button type="button" onClick={() => setShowTransactionModal(false)} className="flex-1 font-black uppercase text-xs text-gray-400">Cancelar</button>
-                  <button type="submit" className={`flex-[2] py-4 rounded-2xl font-black uppercase text-xs text-white shadow-xl ${cfg.btnColor}`}>
-                    Confirmar
+                <Field label="Concepto">
+                  <TextInput
+                    type="text" placeholder="Ej: Pago de clases enero"
+                    value={transactionData.detalles}
+                    onChange={(e) => setTransactionData({ ...transactionData, detalles: e.target.value })}
+                    required
+                  />
+                </Field>
+                <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+                  <button type="button" onClick={() => setShowTransactionModal(false)} style={{ flex: 1, padding: '12px', borderRadius: 10, border: `0.5px solid ${NA.border}`, background: '#fff', color: NA.text2, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+                    Cancelar
+                  </button>
+                  <button type="submit" disabled={guardando} style={{ flex: 2, padding: '12px', borderRadius: 10, border: 'none', background: guardando ? '#d1d5db' : cfg.color, color: '#fff', fontSize: 13, fontWeight: 500, cursor: guardando ? 'default' : 'pointer' }}>
+                    {guardando ? 'Confirmando...' : 'Confirmar'}
                   </button>
                 </div>
               </form>
@@ -535,114 +584,126 @@ const Pasivos = ({ axiosConfig, setView }) => {
         );
       })()}
 
-      {/* ── MODAL EDITAR ───────────────────────────────────────── */}
+      {/* ── MODAL: EDITAR ── */}
       {showEditModal && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4 text-gray-800">
-          <div className="bg-white w-full max-w-md rounded-[3rem] p-10 shadow-2xl border-t-[15px] border-amber-500">
-            <h2 className="font-black uppercase italic mb-6 text-2xl text-center text-amber-600">Editar Perfil</h2>
-            <form onSubmit={handleEditSubmit} className="space-y-4">
-
-              {/* Toggle instructor en edición */}
-              <div>
-                <label className="text-[10px] font-black text-gray-400 uppercase ml-2 mb-1 block">Tipo de cuenta</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setEditDecoded({ ...editDecoded, esInstructor: false })}
-                    className={`py-3 rounded-2xl font-black text-xs uppercase transition-all border-2 ${!editDecoded.esInstructor ? 'bg-amber-500 text-white border-amber-500' : 'bg-gray-50 text-gray-500 border-gray-200'}`}
-                  >📋 General</button>
-                  <button
-                    type="button"
-                    onClick={() => setEditDecoded({ ...editDecoded, esInstructor: true })}
-                    className={`py-3 rounded-2xl font-black text-xs uppercase transition-all border-2 ${editDecoded.esInstructor ? 'bg-amber-500 text-white border-amber-500' : 'bg-gray-50 text-gray-500 border-gray-200'}`}
-                  >🎓 Instructor</button>
+        <div style={sx.overlay} onClick={() => setShowEditModal(false)}>
+          <div style={{ ...sx.modal, borderTop: '4px solid #92400E' }} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ fontSize: 17, fontWeight: 500, color: '#92400E', margin: '0 0 20px', textAlign: 'center' }}>Editar cuenta</h2>
+            <form onSubmit={handleEditSubmit}>
+              <Field label="Tipo de cuenta">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  {[{ v: false, l: 'General', i: 'ti-file-text' }, { v: true, l: 'Instructor', i: 'ti-school' }].map((opt) => (
+                    <button
+                      key={opt.l} type="button"
+                      onClick={() => setEditDecoded({ ...editDecoded, esInstructor: opt.v })}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                        padding: '11px', borderRadius: 10, fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                        border: `1.5px solid ${editDecoded.esInstructor === opt.v ? '#92400E' : NA.border}`,
+                        background: editDecoded.esInstructor === opt.v ? '#92400E' : '#fff',
+                        color: editDecoded.esInstructor === opt.v ? '#fff' : NA.text2,
+                      }}
+                    >
+                      <i className={`ti ${opt.i}`} style={{ fontSize: 15 }} aria-hidden="true" />
+                      {opt.l}
+                    </button>
+                  ))}
                 </div>
-              </div>
+              </Field>
 
-              <div>
-                <label className="text-[10px] font-black text-gray-400 uppercase ml-2">Nombre / Referencia</label>
-                <input
+              <Field label="Nombre / referencia">
+                <TextInput
                   type="text"
-                  className="w-full p-4 bg-gray-50 rounded-2xl border-none font-bold outline-none"
                   value={editPasivo.titulo || ''}
                   onChange={(e) => setEditPasivo({ ...editPasivo, titulo: e.target.value })}
                   required
                 />
-              </div>
+              </Field>
 
               {editDecoded.esInstructor && (
-                <div className="bg-indigo-50 p-4 rounded-2xl space-y-2">
-                  <label className="text-[10px] font-black text-indigo-600 uppercase block">💰 Tarifa por hora (BRL)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="w-full p-4 bg-white rounded-2xl border-none font-black text-xl outline-none text-indigo-700"
-                    value={editDecoded.tarifaHora || ''}
-                    onChange={(e) => setEditDecoded({ ...editDecoded, tarifaHora: e.target.value })}
-                    required
-                  />
+                <div style={{ background: NA.light, borderRadius: 12, padding: 14, marginBottom: 14 }}>
+                  <Field label={<span style={{ color: NA.darker }}>Tarifa por hora (BRL)</span>}>
+                    <input
+                      type="number" step="0.01"
+                      value={editDecoded.tarifaHora || ''}
+                      onChange={(e) => setEditDecoded({ ...editDecoded, tarifaHora: e.target.value })}
+                      required
+                      style={{ ...sx.input, fontSize: 17, fontWeight: 600, color: NA.darker }}
+                      onFocus={focusOn} onBlur={focusOff}
+                    />
+                  </Field>
                 </div>
               )}
 
-              <div>
-                <label className="text-[10px] font-black text-gray-400 uppercase ml-2">Descripción</label>
+              <Field label="Descripción">
                 <textarea
-                  className="w-full p-4 bg-gray-50 rounded-2xl border-none font-bold h-24 outline-none"
                   value={editDecoded.descripcion || ''}
                   onChange={(e) => setEditDecoded({ ...editDecoded, descripcion: e.target.value })}
+                  rows={3}
+                  style={{ ...sx.input, resize: 'vertical', fontFamily: 'inherit' }}
+                  onFocus={focusOn} onBlur={focusOff}
                 />
-              </div>
+              </Field>
 
-              <div className="flex gap-3 pt-4">
-                <button type="button" onClick={() => setShowEditModal(false)} className="flex-1 font-black uppercase text-xs text-gray-400">Cancelar</button>
-                <button type="submit" className="flex-[2] bg-amber-500 text-white py-4 rounded-2xl font-black uppercase text-xs shadow-lg">Guardar Cambios</button>
+              <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+                <button type="button" onClick={() => setShowEditModal(false)} style={{ flex: 1, padding: '12px', borderRadius: 10, border: `0.5px solid ${NA.border}`, background: '#fff', color: NA.text2, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+                  Cancelar
+                </button>
+                <button type="submit" disabled={guardando} style={{ flex: 2, padding: '12px', borderRadius: 10, border: 'none', background: guardando ? '#fcd9a8' : '#92400E', color: '#fff', fontSize: 13, fontWeight: 500, cursor: guardando ? 'default' : 'pointer' }}>
+                  {guardando ? 'Guardando...' : 'Guardar cambios'}
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* ── MODAL HISTORIAL ────────────────────────────────────── */}
+      {/* ── MODAL: HISTORIAL ── */}
       {showHistoryModal && selectedPasivo && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4 text-gray-800">
-          <div className="bg-white w-full max-w-lg rounded-[3rem] p-10 shadow-2xl">
-            <div className="flex justify-between items-center mb-2">
-              <h2 className="font-black uppercase text-xl italic text-gray-800">{selectedPasivo.titulo}</h2>
-              <button onClick={() => setShowHistoryModal(false)} className="text-2xl hover:scale-110 transition-transform">✕</button>
+        <div style={sx.overlay} onClick={() => setShowHistoryModal(false)}>
+          <div style={{ ...sx.modal, maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+              <h2 style={{ fontSize: 17, fontWeight: 500, color: NA.text, margin: 0 }}>{selectedPasivo.titulo}</h2>
+              <button onClick={() => setShowHistoryModal(false)} style={{ width: 28, height: 28, borderRadius: 8, border: 'none', background: '#f3f4f6', color: '#6b7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <i className="ti ti-x" style={{ fontSize: 15 }} aria-hidden="true" />
+              </button>
             </div>
-            <p className="text-[10px] font-black text-gray-400 uppercase mb-8 tracking-widest">Historial de movimientos</p>
+            <p style={{ fontSize: 12, color: NA.text2, margin: '0 0 18px' }}>Historial de movimientos</p>
 
-            <div className="space-y-4 max-h-[28rem] overflow-y-auto pr-2 mb-8">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 420, overflowY: 'auto', marginBottom: 18 }}>
               {selectedPasivo.historialPagos?.length > 0 ? (
                 [...selectedPasivo.historialPagos].reverse().map((mov, idx) => {
                   const monto = parseFloat(mov.montoPagado) || 0;
                   const esPositivo = monto > 0;
                   return (
-                    <div
-                      key={idx}
-                      className={`bg-gray-50 p-5 rounded-3xl border-l-[6px] ${esPositivo ? 'border-emerald-500' : 'border-rose-500'}`}
-                    >
-                      <div className="flex justify-between items-start gap-4">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[11px] font-black text-gray-400 uppercase mb-1">{mov.fecha}</p>
-                          <p className="text-sm font-bold text-gray-700 leading-snug break-words">{mov.nota}</p>
-                        </div>
-                        <span className={`font-black text-xl whitespace-nowrap shrink-0 ${esPositivo ? 'text-emerald-600' : 'text-rose-600'}`}>
-                          {esPositivo ? `+${monto.toFixed(2)}` : `-${Math.abs(monto).toFixed(2)}`}
-                        </span>
+                    <div key={idx} style={{
+                      background: '#f9fafb', borderRadius: 12, padding: '12px 14px',
+                      borderLeft: `3px solid ${esPositivo ? NA.dark : '#B91C1C'}`,
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12,
+                    }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 10, color: '#9ca3af', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '.04em' }}>{mov.fecha}</p>
+                        <p style={{ fontSize: 13, color: NA.text, margin: 0, lineHeight: 1.4, wordBreak: 'break-word' }}>{mov.nota}</p>
                       </div>
+                      <span style={{ fontSize: 16, fontWeight: 600, color: esPositivo ? NA.dark : '#B91C1C', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        {esPositivo ? `+${monto.toFixed(2)}` : `-${Math.abs(monto).toFixed(2)}`}
+                      </span>
                     </div>
                   );
                 })
               ) : (
-                <div className="text-center py-10 text-gray-400 font-bold italic">Sin movimientos registrados.</div>
+                <div style={{ textAlign: 'center', padding: '40px 0', color: '#9ca3af', fontSize: 13 }}>
+                  Sin movimientos registrados.
+                </div>
               )}
             </div>
 
             <button
               onClick={() => setShowHistoryModal(false)}
-              className="w-full bg-gray-900 text-white py-4 rounded-2xl font-black uppercase text-xs transition-all hover:bg-black"
-            >Cerrar</button>
+              style={{ width: '100%', padding: '12px', borderRadius: 10, border: 'none', background: NA.darker, color: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
+            >
+              Cerrar
+            </button>
           </div>
         </div>
       )}
@@ -652,7 +713,4 @@ const Pasivos = ({ axiosConfig, setView }) => {
 
 export default Pasivos;
 
-// ─────────────────────────────────────────────────────────────────
-// EXPORTÁ ESTE HELPER PARA USARLO EN Ingreso / App
-// ─────────────────────────────────────────────────────────────────
 export { decodeTarifa, encodeTarifa };

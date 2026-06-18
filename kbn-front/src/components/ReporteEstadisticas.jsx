@@ -180,11 +180,19 @@ const ReporteEstadisticas = () => {
     setPendientes(prev => prev.map(p => p.id === id ? { ...p, asignadoA: val } : p));
 
   const acumularEnPasivo = async (pasivo, monto, item, etiqueta) => {
-    if (!pasivo || monto <= 0) return;
+    if (!pasivo) {
+      console.warn('[saveAssignment] No se acumuló', etiqueta, '— no se encontró la tarjeta de pasivo.');
+      return;
+    }
+    if (monto <= 0) {
+      console.warn('[saveAssignment] No se acumuló', etiqueta, 'en', pasivo.titulo, '— monto calculado es', monto);
+      return;
+    }
     const montoRedondeado = Math.round(monto * 100) / 100;
     const nota = `${etiqueta} de ${item.actividad || 'Clase'} — ${item.fecha} = ${montoRedondeado.toFixed(2)} ${item.moneda}`;
+    console.log('[saveAssignment] Acumulando', montoRedondeado, 'en', pasivo.titulo, '(id', pasivo.id + ')');
     try {
-      await api.post('/api/clases/guardar', {
+      const res = await api.post('/api/clases/guardar', {
         tipoTransaccion: 'EGRESO',
         tipoMovimientoPasivo: 'NUEVA_DEUDA',
         pasivoId: pasivo.id,
@@ -196,8 +204,9 @@ const ReporteEstadisticas = () => {
         actividad: 'Pago Pasivo',
         instructor: 'Sistema',
       });
+      console.log('[saveAssignment] OK ->', pasivo.titulo, res.status, res.data);
     } catch (e) {
-      console.error(`Error acumulando en pasivo de ${pasivo.titulo}:`, e);
+      console.error(`[saveAssignment] ERROR acumulando en pasivo de ${pasivo.titulo}:`, e.response?.data || e.message);
     }
   };
 
@@ -211,18 +220,25 @@ const ReporteEstadisticas = () => {
       ? item.detalles.split('| Reparto:')[0].trim()
       : item.detalles || '';
 
+    console.log('[saveAssignment] Asignando item', item.id, 'a', asignadoA, '| montoBase:', montoBase, '| reparto:', { mJose, mIgna, mHans });
+
     try {
-      await api.put(`/api/clases/asignar/${item.id}`, { asignadoA, detalles: base + notaPct }, axiosConfig);
+      await api.put(`/api/clases/asignar/${item.id}`, { asignadoA, detalles: base + notaPct });
 
       const resPasivos = await api.get('/api/pasivos');
       const pasivosActuales = resPasivos.data;
       setPasivos(pasivosActuales);
+      console.log('[saveAssignment] Pasivos disponibles:', pasivosActuales.map(p => p.titulo));
 
-      const buscar = (titulo) => pasivosActuales.find(p => p.titulo.toLowerCase() === titulo.toLowerCase());
+      const buscar = (titulo) => pasivosActuales.find(p => p.titulo.trim().toLowerCase() === titulo.trim().toLowerCase());
 
       const pJoseObj = buscar(PASIVO_TITULOS.JOSE);
       const pIgnaObj = buscar(PASIVO_TITULOS.IGNA);
       const pHansObj = buscar(PASIVO_TITULOS.HANS);
+
+      console.log('[saveAssignment] Match José:', pJoseObj?.titulo || 'NO ENCONTRADO');
+      console.log('[saveAssignment] Match Igna:', pIgnaObj?.titulo || 'NO ENCONTRADO');
+      console.log('[saveAssignment] Match Hans:', pHansObj?.titulo || 'NO ENCONTRADO');
 
       const faltantes = [];
       if (!pJoseObj) faltantes.push(PASIVO_TITULOS.JOSE);
@@ -244,7 +260,7 @@ const ReporteEstadisticas = () => {
         alert('Asignado correctamente. Montos acumulados en Cuentas Corrientes de José, Igna y Hans.');
       }
     } catch (e) {
-      console.error(e);
+      console.error('[saveAssignment] ERROR general:', e.response?.data || e.message);
       alert('Error de red o no autorizado al asignar.');
     }
   };
