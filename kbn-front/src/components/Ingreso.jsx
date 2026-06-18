@@ -157,7 +157,7 @@ const Ingreso = ({ formData, handleChange, handleSubmit: originalHandleSubmit, I
       {/* ── Header de pantalla ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
         <button
-          onClick={() => setView('AGENDA')}
+          onClick={() => setView()}
           style={{
             width: 36, height: 36, borderRadius: 10, border: `0.5px solid ${NA.border}`,
             background: '#fff', color: NA.text2, display: 'flex', alignItems: 'center',
