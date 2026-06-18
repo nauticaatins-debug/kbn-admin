@@ -71,7 +71,7 @@ export default function ForgotPassword() {
               Si <strong>{email}</strong> está registrado, vas a recibir un email con el enlace para restablecer tu contraseña. El enlace es válido por 2 horas.
             </p>
             <p style={{ margin: 0, fontSize: 13, color: NA.text2 }}>
-              ¿No llegó? Revisá la carpeta de spam o{' '}
+              ¿No llegó? Revisá la carpeta de SPAM o{' '}
               <button onClick={() => { setSent(false); setEmail(''); }} style={s.inlineBtn}>
                 intentá de nuevo
               </button>.
