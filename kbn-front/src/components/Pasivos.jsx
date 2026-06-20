@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 
 // ── Paleta Náutica Atins ───────────────────────────────────────────────────
@@ -91,6 +91,9 @@ const Pasivos = ({ axiosConfig, setView }) => {
 
   const [transactionType, setTransactionType] = useState('PAGO_DEUDA');
   const [guardando, setGuardando] = useState(false);
+  // Guard síncrono contra doble-tap al eliminar un movimiento del historial.
+  const eliminandoMovRef = useRef(new Set());
+  const [eliminandoMovIds, setEliminandoMovIds] = useState(new Set());
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -259,8 +262,38 @@ const Pasivos = ({ axiosConfig, setView }) => {
     }
   };
 
+  // ─── ELIMINAR UN MOVIMIENTO PUNTUAL DEL HISTORIAL ──────────────
+  // Resta del saldo exactamente lo que ese movimiento había sumado.
+  // Útil para corregir cargas duplicadas (ej: la misma clase acumulada
+  // dos veces por mal wifi).
+  const handleDeleteMovimiento = async (mov) => {
+    if (!selectedPasivo) return;
+    if (!window.confirm(`¿Eliminar este movimiento? Esto va a restar ${mov.montoPagado > 0 ? '' : '-'}${Math.abs(mov.montoPagado).toFixed(2)} del saldo de ${selectedPasivo.titulo}.`)) return;
+
+    if (eliminandoMovRef.current.has(mov.id)) return;
+    eliminandoMovRef.current.add(mov.id);
+    setEliminandoMovIds(new Set(eliminandoMovRef.current));
+
+    try {
+      const res = await axios.delete(
+        `https://kbn-admin-production.up.railway.app/api/pasivos/${selectedPasivo.id}/historial/${mov.id}`,
+        axiosConfig
+      );
+      // Actualiza la tarjeta seleccionada en el modal con el saldo nuevo
+      setSelectedPasivo(res.data);
+      fetchPasivos();
+    } catch (err) {
+      console.error(err);
+      alert('No se pudo eliminar el movimiento.');
+    } finally {
+      eliminandoMovRef.current.delete(mov.id);
+      setEliminandoMovIds(new Set(eliminandoMovRef.current));
+    }
+  };
+
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 4px 60px' }}>
+      <style>{`@keyframes kbn-spin { to { transform:rotate(360deg) } }`}</style>
 
       {/* ── Header ── */}
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 20 }}>
@@ -674,11 +707,12 @@ const Pasivos = ({ axiosConfig, setView }) => {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 420, overflowY: 'auto', marginBottom: 18 }}>
               {selectedPasivo.historialPagos?.length > 0 ? (
-                [...selectedPasivo.historialPagos].reverse().map((mov, idx) => {
+                [...selectedPasivo.historialPagos].reverse().map((mov) => {
                   const monto = parseFloat(mov.montoPagado) || 0;
                   const esPositivo = monto > 0;
+                  const eliminandoEsteMov = eliminandoMovIds.has(mov.id);
                   return (
-                    <div key={idx} style={{
+                    <div key={mov.id} style={{
                       background: '#f9fafb', borderRadius: 12, padding: '12px 14px',
                       borderLeft: `3px solid ${esPositivo ? NA.dark : '#B91C1C'}`,
                       display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12,
@@ -687,9 +721,19 @@ const Pasivos = ({ axiosConfig, setView }) => {
                         <p style={{ fontSize: 10, color: '#9ca3af', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '.04em' }}>{mov.fecha}</p>
                         <p style={{ fontSize: 13, color: NA.text, margin: 0, lineHeight: 1.4, wordBreak: 'break-word' }}>{mov.nota}</p>
                       </div>
-                      <span style={{ fontSize: 16, fontWeight: 600, color: esPositivo ? NA.dark : '#B91C1C', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                        {esPositivo ? `+${monto.toFixed(2)}` : `-${Math.abs(monto).toFixed(2)}`}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                        <span style={{ fontSize: 16, fontWeight: 600, color: esPositivo ? NA.dark : '#B91C1C', whiteSpace: 'nowrap' }}>
+                          {esPositivo ? `+${monto.toFixed(2)}` : `-${Math.abs(monto).toFixed(2)}`}
+                        </span>
+                        <button
+                          onClick={() => handleDeleteMovimiento(mov)}
+                          disabled={eliminandoEsteMov}
+                          title="Eliminar este movimiento"
+                          style={{ width: 26, height: 26, borderRadius: 7, border: 'none', background: 'transparent', color: '#fca5a5', cursor: eliminandoEsteMov ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                        >
+                          <i className={`ti ${eliminandoEsteMov ? 'ti-loader-2' : 'ti-trash'}`} aria-hidden="true" style={{ fontSize: 14, ...(eliminandoEsteMov ? { animation: 'kbn-spin .7s linear infinite' } : {}) }} />
+                        </button>
+                      </div>
                     </div>
                   );
                 })

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 
 // ── Paleta Náutica Atins (variante rosa/rojo para egresos) ──────────────────
 const NA = {
@@ -57,12 +57,17 @@ const Field = ({ label, children }) => (
 
 const Egreso = ({ formData, handleChange, handleSubmit, InstructorField, setView }) => {
   const [guardando, setGuardando] = useState(false);
+  // Guard síncrono contra doble-tap con mal wifi (ver nota en Ingreso.jsx).
+  const enviandoRef = useRef(false);
 
   const onSubmit = async (e) => {
+    if (enviandoRef.current) return;
+    enviandoRef.current = true;
     setGuardando(true);
     try {
       await handleSubmit(e);
     } finally {
+      enviandoRef.current = false;
       setGuardando(false);
     }
   };
@@ -75,7 +80,7 @@ const Egreso = ({ formData, handleChange, handleSubmit, InstructorField, setView
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
         {setView && (
           <button
-            onClick={() => setView('INICIO')}
+            onClick={() => setView()}
             style={{
               width: 36, height: 36, borderRadius: 10, border: `0.5px solid ${NA.border}`,
               background: '#fff', color: NA.text2, display: 'flex', alignItems: 'center',

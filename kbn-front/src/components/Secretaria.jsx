@@ -370,7 +370,7 @@ const Secretaria = () => {
             onChange={e => setFinanceData({ ...financeData, instructor: e.target.value })}
           />
         )}
-        setView={setView}
+        setView={(v) => setView(v || 'INICIO')}
       />
     );
   }

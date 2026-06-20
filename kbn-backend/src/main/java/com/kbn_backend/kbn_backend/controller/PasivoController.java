@@ -104,6 +104,37 @@ public class PasivoController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    // 4b. ELIMINAR UN MOVIMIENTO PUNTUAL DEL HISTORIAL — para corregir cargas
+    //     erróneas (ej: una clase que se acumuló dos veces por mal wifi).
+    //     Resta del montoTotal exactamente lo que ese movimiento había sumado,
+    //     y borra la fila del historial. No toca clases_registros: si el
+    //     movimiento vino de un EGRESO real, ese registro de caja hay que
+    //     borrarlo aparte desde /api/clases/{id}.
+    @Transactional
+    @DeleteMapping("/{pasivoId}/historial/{pagoId}")
+    public ResponseEntity<?> eliminarMovimientoHistorial(
+            @PathVariable Long pasivoId,
+            @PathVariable Long pagoId) {
+
+        Pasivo pasivo = pasivoRepository.findById(pasivoId).orElse(null);
+        if (pasivo == null) return ResponseEntity.notFound().build();
+
+        PagoPasivo pago = pagoPasivoRepository.findById(pagoId).orElse(null);
+        if (pago == null) return ResponseEntity.notFound().build();
+
+        if (pago.getPasivo() == null || !pago.getPasivo().getId().equals(pasivoId)) {
+            return ResponseEntity.badRequest().body("Ese movimiento no pertenece a esta tarjeta.");
+        }
+
+        double monto = pago.getMontoPagado() != null ? pago.getMontoPagado() : 0;
+        pasivo.setMontoTotal(pasivo.getMontoTotal() - monto);
+
+        pagoPasivoRepository.delete(pago);
+        Pasivo actualizado = pasivoRepository.save(pasivo);
+
+        return ResponseEntity.ok(actualizado);
+    }
+
     // 5. Obtener un pasivo específico (útil para ver detalles o historial)
     @GetMapping("/{id}")
     public ResponseEntity<Pasivo> obtenerPasivoPorId(@PathVariable Long id) {

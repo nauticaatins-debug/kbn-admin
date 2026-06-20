@@ -159,7 +159,7 @@ const InstructorForm = () => {
 
   // ── 7. CAMBIO DE TAB ───────────────────────────────────────────────────────
   const handleViewChange = (v) => {
-    setView(v);
+    setView(v || 'AGENDA');
     setFadeKey(k => k + 1); // resetea animación CSS
   };
 

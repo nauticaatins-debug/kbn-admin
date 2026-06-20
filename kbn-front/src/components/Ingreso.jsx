@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 
 // ── Paleta Náutica Atins ───────────────────────────────────────────────────
@@ -83,6 +83,10 @@ const Ingreso = ({ formData, handleChange, handleSubmit: originalHandleSubmit, I
   const [pasivoVinculado, setPasivoVinculado] = useState(null);
   const [deudaCalculada, setDeudaCalculada] = useState(0);
   const [guardando, setGuardando] = useState(false);
+  // Guard síncrono: en mobile con mal wifi, un doble-tap puede disparar
+  // dos eventos submit antes de que React re-renderice el botón como
+  // disabled. useRef cambia al instante, sin esperar al re-render.
+  const enviandoRef = useRef(false);
 
   useEffect(() => {
     if (!axiosConfig) return;
@@ -116,36 +120,46 @@ const Ingreso = ({ formData, handleChange, handleSubmit: originalHandleSubmit, I
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // Si ya hay un envío en curso, ignoramos cualquier toque/click extra
+    // (doble-tap, doble-click, Enter repetido) hasta que termine.
+    if (enviandoRef.current) return;
+    enviandoRef.current = true;
     setGuardando(true);
 
-    await originalHandleSubmit(e);
+    try {
+      await originalHandleSubmit(e);
 
-    const actividad = formData.actividad === 'Otro' ? formData.actividadOtro : formData.actividad;
+      const actividad = formData.actividad === 'Otro' ? formData.actividadOtro : formData.actividad;
 
-    if (pasivoVinculado && deudaCalculada > 0 && axiosConfig) {
-      try {
-        const { tarifaHora } = decodeTarifa(pasivoVinculado.descripcion);
-        const horas = parseFloat(formData.horas) || 0;
-        const detalles = formData.detalles ? ` — ${formData.detalles}` : '';
-        const nota = `Pago por ${horas}h de ${actividad}${detalles} · ${horas}h × ${tarifaHora} BRL/h = ${deudaCalculada.toFixed(2)} BRL`;
-        // Acumula la deuda en la tarjeta del instructor SIN generar un movimiento
-        // de caja (no es plata que salió, es deuda interna acumulada).
-        await axios.put(
-          `https://kbn-admin-production.up.railway.app/api/pasivos/${pasivoVinculado.id}/acumular`,
-          {
-            monto: -deudaCalculada,
-            nota,
-            fecha: formData.fecha,
-          },
-          axiosConfig
-        );
-      } catch (err) {
-        console.error('Error al acumular deuda instructor:', err);
-        alert(`El ingreso se guardó, pero no se pudo acumular a ${pasivoVinculado.titulo}. Revisá en Cuentas Corrientes.`);
+      if (pasivoVinculado && deudaCalculada > 0 && axiosConfig) {
+        try {
+          const { tarifaHora } = decodeTarifa(pasivoVinculado.descripcion);
+          const horas = parseFloat(formData.horas) || 0;
+          const detalles = formData.detalles ? ` — ${formData.detalles}` : '';
+          const nota = `Pago por ${horas}h de ${actividad}${detalles} · ${horas}h × ${tarifaHora} BRL/h = ${deudaCalculada.toFixed(2)} BRL`;
+          // Acumula la deuda en la tarjeta del instructor SIN generar un movimiento
+          // de caja (no es plata que salió, es deuda interna acumulada).
+          await axios.put(
+            `https://kbn-admin-production.up.railway.app/api/pasivos/${pasivoVinculado.id}/acumular`,
+            {
+              monto: -deudaCalculada,
+              nota,
+              fecha: formData.fecha,
+            },
+            axiosConfig
+          );
+        } catch (err) {
+          console.error('Error al acumular deuda instructor:', err);
+          alert(`El ingreso se guardó, pero no se pudo acumular a ${pasivoVinculado.titulo}. Revisá en Cuentas Corrientes.`);
+        }
       }
+    } finally {
+      // finally asegura que el botón se reactive incluso si algo falla,
+      // así nunca queda "trabado" en estado Guardando para siempre.
+      enviandoRef.current = false;
+      setGuardando(false);
     }
-
-    setGuardando(false);
   };
 
   const tarifaInstructor = pasivoVinculado ? decodeTarifa(pasivoVinculado.descripcion).tarifaHora : null;
@@ -157,7 +171,7 @@ const Ingreso = ({ formData, handleChange, handleSubmit: originalHandleSubmit, I
       {/* ── Header de pantalla ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
         <button
-          onClick={() => setView('INICIO')}
+          onClick={() => setView()}
           style={{
             width: 36, height: 36, borderRadius: 10, border: `0.5px solid ${NA.border}`,
             background: '#fff', color: NA.text2, display: 'flex', alignItems: 'center',

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Chart as ChartJS,
   ArcElement,
@@ -69,6 +69,19 @@ const ReporteEstadisticas = () => {
   const [mostrarFiltros,       setMostrarFiltros]       = useState(false);
   const [showOtherCurrencies,  setShowOtherCurrencies]  = useState(false);
   const [expandedId,           setExpandedId]           = useState(null);
+
+  // ── Modal de edición de un registro (Ingreso/Egreso) ──────────
+  const [editItem, setEditItem] = useState(null);
+  const [editForm, setEditForm] = useState(null);
+  const guardandoEdicionRef = useRef(false);
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false);
+  // Guard síncrono contra doble-tap al eliminar (ver nota en otros componentes)
+  const eliminandoRef = useRef(new Set());
+  const [eliminandoIds, setEliminandoIds] = useState(new Set());
+  // Guard síncrono contra doble-tap al asignar (un Set porque hay un botón
+  // "OK" por cada item pendiente, todos pueden estar en distinto estado)
+  const asignandoRef = useRef(new Set());
+  const [asignandoIds, setAsignandoIds] = useState(new Set());
 
   const [filtros, setFiltros] = useState({
     moneda: '', formaPago: '', instructor: '',
@@ -207,6 +220,11 @@ const ReporteEstadisticas = () => {
 
   const saveAssignment = async (item, asignadoA) => {
     if (!asignadoA || asignadoA === 'NINGUNO') return alert('Selecciona un instructor válido.');
+
+    if (asignandoRef.current.has(item.id)) return;
+    asignandoRef.current.add(item.id);
+    setAsignandoIds(new Set(asignandoRef.current));
+
     const montoBase = parseFloat(item.total) || 0;
     const { pIgna, pJose, pHans, mIgna, mJose, mHans } = calcularReparto(asignadoA, montoBase);
     const fmt = n => n.toString().replace('.', ',');
@@ -257,15 +275,72 @@ const ReporteEstadisticas = () => {
     } catch (e) {
       console.error('[saveAssignment] ERROR general:', e.response?.data || e.message);
       alert('Error de red o no autorizado al asignar.');
+    } finally {
+      asignandoRef.current.delete(item.id);
+      setAsignandoIds(new Set(asignandoRef.current));
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('¿Eliminar registro?')) return;
-    alert('Funcionalidad pendiente de Endpoint DELETE');
+  const handleDelete = async (item) => {
+    const esDeudaInterna = item.tipoTransaccion === 'EGRESO' && item.pasivoId;
+    const advertencia = esDeudaInterna
+      ? `¿Eliminar este registro? Esto también va a restar ${item.total} ${item.moneda} del saldo de la tarjeta de Pasivos vinculada.`
+      : '¿Eliminar este registro? Esta acción no se puede deshacer.';
+    if (!window.confirm(advertencia)) return;
+
+    if (eliminandoRef.current.has(item.id)) return;
+    eliminandoRef.current.add(item.id);
+    setEliminandoIds(new Set(eliminandoRef.current));
+
+    try {
+      await api.delete(`/api/clases/${item.id}`);
+      fetchData();
+      fetchPasivos();
+    } catch (e) {
+      console.error('[handleDelete] ERROR:', e.response?.data || e.message);
+      alert('No se pudo eliminar el registro. Probá de nuevo.');
+    } finally {
+      eliminandoRef.current.delete(item.id);
+      setEliminandoIds(new Set(eliminandoRef.current));
+    }
   };
 
-  const handleEdit = (id) => alert(`Editar ID: ${id}`);
+  const handleEdit = (item) => {
+    setEditItem(item);
+    setEditForm({
+      fecha: item.fecha || '',
+      actividad: item.actividad || '',
+      total: item.total || '',
+      moneda: item.moneda || 'BRL',
+      formaPago: item.formaPago || '',
+      detalles: item.detalles || '',
+      instructor: item.instructor || '',
+    });
+  };
+
+  const handleEditFieldChange = (field, value) => {
+    setEditForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    if (guardandoEdicionRef.current) return;
+    guardandoEdicionRef.current = true;
+    setGuardandoEdicion(true);
+
+    try {
+      await api.put(`/api/clases/${editItem.id}`, editForm);
+      setEditItem(null);
+      setEditForm(null);
+      fetchData();
+    } catch (e) {
+      console.error('[handleEditSubmit] ERROR:', e.response?.data || e.message);
+      alert('No se pudo guardar la edición. Probá de nuevo.');
+    } finally {
+      guardandoEdicionRef.current = false;
+      setGuardandoEdicion(false);
+    }
+  };
 
   const renderRepartoDesglose = (item) => {
     const { pIgna, pJose, pHans, mIgna, mJose, mHans } = calcularReparto(item.asignadoA, parseFloat(item.total) || 0);
@@ -344,6 +419,7 @@ const ReporteEstadisticas = () => {
 
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto', padding: '28px 16px 80px', display: 'flex', flexDirection: 'column', gap: 20, background: NA.bg, minHeight: '100%' }}>
+      <style>{`@keyframes kbn-spin { to { transform:rotate(360deg) } }`}</style>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingBottom: 20, borderBottom: `1px solid ${NA.border}` }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -512,7 +588,9 @@ const ReporteEstadisticas = () => {
         </div>
         {pendientesFiltrados.length === 0
           ? <div style={{ padding: '20px', textAlign: 'center', color: NA.text2, fontSize: 14 }}>No hay ingresos pendientes.</div>
-          : pendientesFiltrados.map(item => (
+          : pendientesFiltrados.map(item => {
+            const asignandoEsteItem = asignandoIds.has(item.id);
+            return (
             <div key={item.id}>
               <div style={styles.row}>
                 <div style={{ flex: 1 }}>
@@ -526,6 +604,7 @@ const ReporteEstadisticas = () => {
                   <select
                     value={item.asignadoA}
                     onChange={(e) => handlePendienteChange(item.id, e.target.value)}
+                    disabled={asignandoEsteItem}
                     style={{ padding: '6px 10px', borderRadius: 8, border: `0.5px solid ${NA.border}`, background: NA.light, color: NA.text, fontSize: 13 }}
                   >
                     <option value="NINGUNO">Elegir...</option>
@@ -534,9 +613,17 @@ const ReporteEstadisticas = () => {
                     <option value="AMBOS">Ambos presentes</option>
                     <option value="ALE">Ausentes</option>
                   </select>
-                  <button onClick={() => saveAssignment(item, item.asignadoA)}
-                    style={{ padding: '6px 14px', background: NA.dark, color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer', fontWeight: 500 }}>
-                    OK
+                  <button onClick={() => saveAssignment(item, item.asignadoA)} disabled={asignandoEsteItem}
+                    style={{ padding: '6px 14px', background: asignandoEsteItem ? NA.mid : NA.dark, color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, cursor: asignandoEsteItem ? 'default' : 'pointer', fontWeight: 500 }}>
+                    {asignandoEsteItem ? '...' : 'OK'}
+                  </button>
+                  <button onClick={() => handleEdit(item)} disabled={eliminandoIds.has(item.id)}
+                    style={{ width: 32, height: 32, borderRadius: 8, background: '#fff', color: '#92400E', border: `0.5px solid ${NA.border}`, cursor: eliminandoIds.has(item.id) ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <i className="ti ti-edit" aria-hidden="true" style={{ fontSize: 14 }} />
+                  </button>
+                  <button onClick={() => handleDelete(item)} disabled={eliminandoIds.has(item.id)}
+                    style={{ width: 32, height: 32, borderRadius: 8, background: '#fff', color: '#B91C1C', border: `0.5px solid ${NA.border}`, cursor: eliminandoIds.has(item.id) ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <i className={`ti ${eliminandoIds.has(item.id) ? 'ti-loader-2' : 'ti-trash'}`} aria-hidden="true" style={{ fontSize: 14, ...(eliminandoIds.has(item.id) ? { animation: 'kbn-spin .7s linear infinite' } : {}) }} />
                   </button>
                   <button onClick={() => toggleDetails(item.id)}
                     style={{ padding: '6px 10px', background: '#fff', color: NA.text2, border: `0.5px solid ${NA.border}`, borderRadius: 8, fontSize: 13, cursor: 'pointer' }}>
@@ -546,7 +633,7 @@ const ReporteEstadisticas = () => {
               </div>
               {expandedId === item.id && <RenderDetails item={item} />}
             </div>
-          ))
+          );})
         }
       </div>
 
@@ -572,10 +659,20 @@ const ReporteEstadisticas = () => {
                     </div>
                     <div style={{ fontSize: 13, color: NA.text2, marginTop: 3 }}>{item.detalles || 'Egreso general'}</div>
                   </div>
-                  <button onClick={() => toggleDetails(item.id)}
-                    style={{ padding: '5px 12px', background: '#FEF2F2', color: '#991B1B', border: '0.5px solid #FECACA', borderRadius: 8, fontSize: 12, cursor: 'pointer' }}>
-                    Ver detalle
-                  </button>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button onClick={() => toggleDetails(item.id)}
+                      style={{ padding: '5px 12px', background: '#FEF2F2', color: '#991B1B', border: '0.5px solid #FECACA', borderRadius: 8, fontSize: 12, cursor: 'pointer' }}>
+                      Ver detalle
+                    </button>
+                    <button onClick={() => handleEdit(item)} disabled={eliminandoIds.has(item.id)}
+                      style={{ width: 32, height: 32, borderRadius: 8, border: '0.5px solid #FECACA', background: '#fff', color: '#92400E', cursor: eliminandoIds.has(item.id) ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>
+                      <i className="ti ti-edit" aria-hidden="true" />
+                    </button>
+                    <button onClick={() => handleDelete(item)} disabled={eliminandoIds.has(item.id)}
+                      style={{ width: 32, height: 32, borderRadius: 8, border: '0.5px solid #FECACA', background: '#fff', color: '#B91C1C', cursor: eliminandoIds.has(item.id) ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>
+                      <i className={`ti ${eliminandoIds.has(item.id) ? 'ti-loader-2' : 'ti-trash'}`} aria-hidden="true" style={eliminandoIds.has(item.id) ? { animation: 'kbn-spin .7s linear infinite' } : undefined} />
+                    </button>
+                  </div>
                 </div>
                 {expandedId === item.id && <RenderDetails item={item} />}
               </div>
@@ -610,12 +707,12 @@ const ReporteEstadisticas = () => {
                 <div style={{ display: 'flex', gap: 4 }}>
                   {[
                     { icon: 'ti-eye',   fn: () => toggleDetails(item.id),  color: NA.dark },
-                    { icon: 'ti-edit',  fn: () => handleEdit(item.id),     color: '#92400E' },
-                    { icon: 'ti-trash', fn: () => handleDelete(item.id),   color: '#B91C1C' },
+                    { icon: 'ti-edit',  fn: () => handleEdit(item),        color: '#92400E' },
+                    { icon: eliminandoIds.has(item.id) ? 'ti-loader-2' : 'ti-trash', fn: () => handleDelete(item), color: '#B91C1C' },
                   ].map(({ icon, fn, color }) => (
-                    <button key={icon} onClick={fn}
-                      style={{ width: 32, height: 32, borderRadius: 8, border: `0.5px solid ${NA.border}`, background: '#fff', color, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>
-                      <i className={`ti ${icon}`} aria-hidden="true" />
+                    <button key={icon} onClick={fn} disabled={eliminandoIds.has(item.id)}
+                      style={{ width: 32, height: 32, borderRadius: 8, border: `0.5px solid ${NA.border}`, background: '#fff', color, cursor: eliminandoIds.has(item.id) ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>
+                      <i className={`ti ${icon}`} aria-hidden="true" style={icon === 'ti-loader-2' ? { animation: 'kbn-spin .7s linear infinite' } : undefined} />
                     </button>
                   ))}
                 </div>
@@ -627,6 +724,115 @@ const ReporteEstadisticas = () => {
       </div>
 
       <ReportesEstadisticasGraficos asignados={asignadosFiltrados} egresos={egresosFiltrados} />
+
+      {/* ── MODAL: EDITAR REGISTRO ── */}
+      {editItem && editForm && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(8,80,65,.45)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 16 }}
+          onClick={() => { setEditItem(null); setEditForm(null); }}
+        >
+          <div
+            style={{ background: '#fff', borderRadius: 20, padding: 28, width: '100%', maxWidth: 440, maxHeight: '90vh', overflowY: 'auto', boxSizing: 'border-box' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ fontSize: 17, fontWeight: 500, color: NA.text, margin: '0 0 4px' }}>
+              Editar {editItem.tipoTransaccion === 'INGRESO' ? 'ingreso' : 'egreso'}
+            </h2>
+            <p style={{ fontSize: 12, color: NA.text2, margin: '0 0 20px' }}>Registro #{editItem.id}</p>
+
+            <form onSubmit={handleEditSubmit}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label style={{ fontSize: 11, color: NA.text2, display: 'block', marginBottom: 5 }}>Fecha</label>
+                  <input
+                    type="date" value={editForm.fecha}
+                    onChange={(e) => handleEditFieldChange('fecha', e.target.value)}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `0.5px solid ${NA.border}`, fontSize: 14, boxSizing: 'border-box' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: NA.text2, display: 'block', marginBottom: 5 }}>Total</label>
+                  <input
+                    type="number" step="0.01" value={editForm.total}
+                    onChange={(e) => handleEditFieldChange('total', e.target.value)}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `0.5px solid ${NA.border}`, fontSize: 14, boxSizing: 'border-box' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label style={{ fontSize: 11, color: NA.text2, display: 'block', marginBottom: 5 }}>Actividad</label>
+                  <input
+                    type="text" value={editForm.actividad}
+                    onChange={(e) => handleEditFieldChange('actividad', e.target.value)}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `0.5px solid ${NA.border}`, fontSize: 14, boxSizing: 'border-box' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: NA.text2, display: 'block', marginBottom: 5 }}>Moneda</label>
+                  <input
+                    type="text" value={editForm.moneda}
+                    onChange={(e) => handleEditFieldChange('moneda', e.target.value)}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `0.5px solid ${NA.border}`, fontSize: 14, boxSizing: 'border-box' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 11, color: NA.text2, display: 'block', marginBottom: 5 }}>Instructor</label>
+                <input
+                  type="text" value={editForm.instructor}
+                  onChange={(e) => handleEditFieldChange('instructor', e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `0.5px solid ${NA.border}`, fontSize: 14, boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 11, color: NA.text2, display: 'block', marginBottom: 5 }}>Forma de pago</label>
+                <input
+                  type="text" value={editForm.formaPago}
+                  onChange={(e) => handleEditFieldChange('formaPago', e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `0.5px solid ${NA.border}`, fontSize: 14, boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div style={{ marginBottom: 18 }}>
+                <label style={{ fontSize: 11, color: NA.text2, display: 'block', marginBottom: 5 }}>Detalles</label>
+                <textarea
+                  rows={3} value={editForm.detalles}
+                  onChange={(e) => handleEditFieldChange('detalles', e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `0.5px solid ${NA.border}`, fontSize: 14, boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit' }}
+                />
+              </div>
+
+              {editItem.tipoTransaccion === 'EGRESO' && editItem.pasivoId && (
+                <div style={{ background: '#FFFBEB', color: '#92400E', fontSize: 12, padding: '10px 14px', borderRadius: 10, marginBottom: 14, lineHeight: 1.4 }}>
+                  Este registro está vinculado a una tarjeta de Pasivos. Editar el monto acá NO ajusta automáticamente
+                  el saldo de esa tarjeta — si cambiás el total, corregí el saldo manualmente desde Cuentas Corrientes.
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => { setEditItem(null); setEditForm(null); }}
+                  style={{ flex: 1, padding: '12px', borderRadius: 10, border: `0.5px solid ${NA.border}`, background: '#fff', color: NA.text2, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={guardandoEdicion}
+                  style={{ flex: 2, padding: '12px', borderRadius: 10, border: 'none', background: guardandoEdicion ? NA.mid : NA.dark, color: '#fff', fontSize: 13, fontWeight: 500, cursor: guardandoEdicion ? 'default' : 'pointer' }}
+                >
+                  {guardandoEdicion ? 'Guardando...' : 'Guardar cambios'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );
