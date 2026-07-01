@@ -21,7 +21,7 @@ public class RolService {
     }
 
     public List<Rol> getAllRoles() {
-        return rolRepository.findAll();
+        return rolRepository.findAllRoles();
     }
 
     public Optional<Rol> getRoleById(Long id) {

@@ -24,7 +24,7 @@ public class Usuario {
     private String password;
     @Column
     private String telefono;
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "role_id")
     private Rol rol;
 }
