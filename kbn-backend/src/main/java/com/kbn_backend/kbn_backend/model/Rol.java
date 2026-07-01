@@ -14,7 +14,7 @@ public class Rol {
     private Long id;
     @Column(unique = true)
     private String nombre;
-    @OneToMany(mappedBy = "rol")
+    @OneToMany(mappedBy = "rol", fetch = FetchType.LAZY)
     @JsonIgnore
     private List<Usuario> usuarios;
 
