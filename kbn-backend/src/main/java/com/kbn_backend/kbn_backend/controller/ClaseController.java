@@ -203,7 +203,7 @@ public class ClaseController {
 
                     // Si es un INGRESO, revertir el reparto que había generado
                     if ("INGRESO".equalsIgnoreCase(registro.getTipoTransaccion())) {
-                        repartoService.limpiar(registro.getId());
+                        repartoService.limpiarPorIngreso(registro);
                     }
 
                     claseRepository.delete(registro);

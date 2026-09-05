@@ -59,7 +59,7 @@ public class RepartoService {
         Map<String, Object> resumen = new LinkedHashMap<>();
         if (r == null || r.getId() == null) { resumen.put("error", "ingreso sin id"); return resumen; }
 
-        int borrados = limpiar(r.getId());
+        int borrados = limpiarPorIngreso(r);
         resumen.put("movimientosBorrados", borrados);
 
         if (!"INGRESO".equalsIgnoreCase(r.getTipoTransaccion())) {
@@ -107,10 +107,65 @@ public class RepartoService {
     public int limpiar(Long ingresoId) {
         if (ingresoId == null) return 0;
         List<PagoPasivo> previos = pagoPasivoRepository.findByOrigenIngresoId(ingresoId);
-        if (previos.isEmpty()) return 0;
+        return borrarLista(previos);
+    }
 
+    /**
+     * Limpieza robusta a partir del ingreso completo.
+     *
+     * Borra primero por origenIngresoId (los movimientos nuevos, bien
+     * vinculados). Si no encuentra ninguno — caso de repartos viejos creados
+     * antes de existir el campo — cae a un respaldo: busca en las tres tarjetas
+     * los movimientos de reparto cuya nota corresponde a este ingreso
+     * (mismo % de <actividad> — <fecha>) y mismo monto esperado.
+     *
+     * Esto garantiza que borrar un ingreso limpie su reparto, sea nuevo o viejo.
+     */
+    @Transactional
+    public int limpiarPorIngreso(ClaseRegistro r) {
+        if (r == null || r.getId() == null) return 0;
+
+        // 1) intento normal por origen
+        int borrados = borrarLista(pagoPasivoRepository.findByOrigenIngresoId(r.getId()));
+        if (borrados > 0) return borrados;
+
+        // 2) respaldo por coincidencia de nota (para repartos viejos sin origen)
+        String actividad = r.getActividad() != null && !r.getActividad().isBlank()
+                ? r.getActividad() : "Ingreso";
+        String fecha = r.getFecha();
+        if (fecha == null || fecha.isBlank()) return 0;
+        double total = parseMonto(r.getTotal());
+        if (total <= 0) return 0;
+
+        String asignado = r.getAsignadoA();
+        Map<String, Double> pcts = porcentajes(asignado);
+
+        List<PagoPasivo> aBorrar = new ArrayList<>();
+        for (String titulo : new String[]{ T_IGNA, T_JOSE, T_HANS }) {
+            Pasivo pasivo = buscar(titulo);
+            if (pasivo == null || pasivo.getHistorialPagos() == null) continue;
+
+            double pct = pcts.getOrDefault(titulo, 0.0);
+            double montoEsperado = Math.round(total * pct / 100.0 * 100.0) / 100.0;
+            // prefijo esperado de la nota: "<pct>% de <actividad> — <fecha>"
+            String prefijo = fmtPct(pct) + "% de " + actividad + " — " + fecha;
+
+            for (PagoPasivo p : pasivo.getHistorialPagos()) {
+                if (p.getNota() == null) continue;
+                boolean notaCoincide = p.getNota().startsWith(prefijo);
+                boolean montoCoincide = p.getMontoPagado() != null
+                        && Math.abs(Math.abs(p.getMontoPagado()) - montoEsperado) < 0.02;
+                if (notaCoincide && montoCoincide) aBorrar.add(p);
+            }
+        }
+        return borrarLista(aBorrar);
+    }
+
+    /** Saca una lista de movimientos de sus tarjetas y recalcula saldos. */
+    private int borrarLista(List<PagoPasivo> movs) {
+        if (movs == null || movs.isEmpty()) return 0;
         Map<Long, List<Long>> porTarjeta = new LinkedHashMap<>();
-        for (PagoPasivo p : previos) {
+        for (PagoPasivo p : movs) {
             if (p.getPasivo() == null) continue;
             porTarjeta.computeIfAbsent(p.getPasivo().getId(), k -> new ArrayList<>()).add(p.getId());
         }
