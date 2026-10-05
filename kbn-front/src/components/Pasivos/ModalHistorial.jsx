@@ -43,7 +43,15 @@ const ModalHistorial = ({ selectedPasivo, eliminandoMovIds, onDeleteMovimiento, 
       if (!map.has(k)) map.set(k, []);
       map.get(k).push(m);
     });
-    return [...map.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+    // Dentro de cada día, cronológico por id (el orden de inserción real).
+    map.forEach((lista) => lista.sort((a, b) => (a.id || 0) - (b.id || 0)));
+    // Días de más reciente a más antiguo. "Sin fecha" siempre al final
+    // (antes quedaba primero porque "S" ordena después de los dígitos).
+    return [...map.entries()].sort((a, b) => {
+      if (a[0] === 'Sin fecha') return 1;
+      if (b[0] === 'Sin fecha') return -1;
+      return b[0].localeCompare(a[0]);
+    });
   }, [selectedPasivo]);
 
   // Días abiertos — arranca con el más reciente
@@ -63,7 +71,7 @@ const ModalHistorial = ({ selectedPasivo, eliminandoMovIds, onDeleteMovimiento, 
 
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-          <h2 style={{ fontSize: 17, fontWeight: 500, color: T.texto, margin: 0, fontWeight: 600 }}>{selectedPasivo.titulo}</h2>
+          <h2 style={{ fontSize: 17, fontWeight: 600, color: T.texto, margin: 0 }}>{selectedPasivo.titulo}</h2>
           <button onClick={onClose}
             style={{ width: 28, height: 28, borderRadius: 8, border: 'none', background: '#f3f4f6', color: '#6b7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <i className="ti ti-x" style={{ fontSize: 15 }} aria-hidden="true" />

@@ -19,6 +19,20 @@ public class FinanzasService {
     @Autowired
     private AgendaRepository agendaRepository;
 
+    /**
+     * ClaseRegistro.fecha es un String (normalmente "yyyy-MM-dd" desde el
+     * <input type="date"> del front, a veces con hora pegada). Esto lo
+     * convierte a LocalDate de forma tolerante, con fallback a hoy.
+     */
+    private LocalDate fechaDeRegistro(String fecha) {
+        if (fecha == null || fecha.isBlank()) return LocalDate.now();
+        try {
+            return LocalDate.parse(fecha.trim().substring(0, 10));
+        } catch (Exception e) {
+            return LocalDate.now();
+        }
+    }
+
     @Transactional
     public ClaseRegistro guardarTransaccion(ClaseRegistro registro) {
 
@@ -97,7 +111,11 @@ public class FinanzasService {
                 // calcularSaldosPorMoneda() pueda agrupar bien.
                 PagoPasivo pagoHistorial = new PagoPasivo();
                 pagoHistorial.setMontoPagado(monto);
-                pagoHistorial.setFecha(LocalDate.now());
+                // La fecha del movimiento del pasivo tiene que ser la MISMA que la
+                // del movimiento de caja. Antes se usaba LocalDate.now(), así que si
+                // se cargaba un pago con fecha pasada, en el historial de la tarjeta
+                // aparecía bajo el día de hoy (fuera de orden).
+                pagoHistorial.setFecha(fechaDeRegistro(registro.getFecha()));
                 pagoHistorial.setNota(
                         registro.getDetalles() != null ? registro.getDetalles() : "Pago registrado"
                 );

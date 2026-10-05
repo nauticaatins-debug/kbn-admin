@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../axiosConfig';
 import { usePresencia } from '../hooks/usePresencia';
+import { CATEGORIAS_EGRESO } from './Egreso';
 
 /* ══════════════════════════════════════════════════════════════════════════
    IMPORTAR DEL GRUPO
@@ -26,6 +27,7 @@ const C = {
   tenue:  'rgba(255,255,255,.35)',
   clase:  '#2ECFC4',
   pago:   '#FBBF24',
+  gasto:  '#FB7185',
   ok:     '#34D399',
   error:  '#F87171',
 };
@@ -77,6 +79,107 @@ const num = (s) => {
   const v = parseFloat(t);
   return isNaN(v) ? null : v;
 };
+
+const sinTildes = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+// ── Gastos ────────────────────────────────────────────────────────────────
+// "PAGO A Facundo r$500 stone Igna"  → le pagamos al instructor
+// "ADELANTO Hans r$300 efectivo"     → adelanto, mismo efecto en caja
+// El "a" es obligatorio después de pago/pagamento: así "Pagamento Reginaldo"
+// sigue siendo un gasto común y no se engancha a ninguna tarjeta.
+const RE_PAGO_PASIVO = /\b(pag(?:o|amento|ar|uei)|liquidaci[oó]n)\s+a\b/i;
+const RE_ADELANTO    = /\b(adelantos?|adiantamentos?|anticipos?)\b/i;
+// "directo" / "direto" en una línea de pagos = el alumno le pagó al instructor
+const RE_DIRECTO     = /\bdirec?to\b/i;
+
+// El PRIMER importe con R$. En "R$422 ... En total foi R$740" vale 422.
+function montoDeLinea(linea) {
+  let monto = null, mm;
+  RE_MONTO.lastIndex = 0;
+  while ((mm = RE_MONTO.exec(linea)) !== null) {
+    const v = num(mm[1] != null ? mm[1] : mm[2]);
+    if (v != null && v > 0) { monto = v; break; }
+  }
+  if (monto == null) {
+    const cand = []; const reN = /(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?)/g; let n;
+    while ((n = reN.exec(linea)) !== null) {
+      const sig = linea.slice(n.index + n[0].length, n.index + n[0].length + 3).toLowerCase();
+      if (/^\s*h/.test(sig)) continue;              // no confundir horas con plata
+      const v = num(n[1]); if (v != null) cand.push(v);
+    }
+    if (cand.length) monto = Math.max(...cand);
+  }
+  return monto;
+}
+
+function canalDeLinea(linea) {
+  for (const [re, c, f] of CANALES) if (re.test(linea)) return { moneda: c, formaPago: f };
+  return { moneda: null, formaPago: null };
+}
+
+// Busca la tarjeta de cuenta corriente que mejor pega con el texto.
+// Alcanza con el apodo: "Facu" pega con "Facundo Moreno" porque se acepta
+// cualquier palabra de 4+ letras que sea el comienzo de una del título.
+// Gana la coincidencia más larga, y devuelve también el texto que pegó para
+// poder sacarlo del detalle.
+function buscarPasivo(texto, pasivos) {
+  const tokens = sinTildes(texto).split(/[^a-z0-9]+/).filter((w) => w.length >= 4);
+  let mejor = null, token = null, largo = 0;
+  for (const p of (pasivos || [])) {
+    for (const w of sinTildes(p.titulo).split(/[^a-z0-9]+/)) {
+      if (w.length < 4) continue;
+      for (const t of tokens) {
+        if (w.startsWith(t) && t.length > largo) { mejor = p; token = t; largo = t.length; }
+      }
+    }
+  }
+  return mejor ? { pasivo: mejor, token } : null;
+}
+
+function detectarCategoria(linea) {
+  const t = sinTildes(linea);
+  let mejor = null, largo = 0;
+  for (const c of CATEGORIAS_EGRESO) {
+    if (c === 'Otros') continue;                     // demasiado genérico
+    for (const w of sinTildes(c).split(/[\s&]+/)) {
+      if (w.length >= 5 && w.length > largo && t.includes(w)) { mejor = c; largo = w.length; }
+    }
+  }
+  return mejor;
+}
+
+function parseGasto(lineaOriginal, fecha, pasivos) {
+  const linea = lineaOriginal.replace(/^[\s\-–—•*·]+/, '');
+  const monto = montoDeLinea(linea);
+  if (monto == null || monto <= 0) return null;
+
+  const { moneda, formaPago } = canalDeLinea(linea);
+  const esAdelanto = RE_ADELANTO.test(linea);
+  const hit = (esAdelanto || RE_PAGO_PASIVO.test(linea)) ? buscarPasivo(linea, pasivos) : null;
+  const pasivo = hit ? hit.pasivo : null;
+
+  let det = linea.replace(RE_MONTO, ' ')
+    .replace(/\bpag(?:o|os|amento|amentos|uei|ar)\b|\badelantos?\b|\badiantamentos?\b|\banticipos?\b|\bgastos?\b|\bdespesas?\b/ig, ' ');
+  for (const [re] of CANALES) det = det.replace(re, ' ');
+  det = det.replace(/R\$|\breais?\b|\bcarta\b/ig, ' ')
+    .replace(/\d+/g, ' ')
+    .replace(/(^|\s)a(\s|$)/ig, ' ')
+    .replace(/[-–—:]+/g, ' ')
+    .replace(/\s{2,}/g, ' ').trim().replace(/^[\s\-–:,.]+|[\s\-–:,.]+$/g, '');
+
+  return {
+    kind: 'EGRESO',
+    fecha,
+    monto,
+    moneda:    moneda || 'R$_EFECTIVO',
+    formaPago: formaPago || 'Efectivo',
+    actividad: pasivo ? 'Honorarios Instructores' : (detectarCategoria(linea) || 'Otros'),
+    alumno:    det || (pasivo ? pasivo.titulo : null),
+    pasivoId:  pasivo ? pasivo.id : null,
+    tipoMovimientoPasivo: pasivo ? (esAdelanto ? 'ADELANTO' : 'PAGO_DEUDA') : null,
+    linea: lineaOriginal.trim(),
+  };
+}
 
 // Apodos que usan en el grupo. Sirven de respaldo si la lista de usuarios
 // no cargó, y se cruzan con los nombres reales para asignar el id.
@@ -198,33 +301,23 @@ function parseClase(lineaOriginal, fecha, instructores) {
   };
 }
 
-function parsePago(linea, fecha) {
-  let moneda = null, formaPago = null;
-  for (const [re, c, f] of CANALES) if (re.test(linea)) { moneda = c; formaPago = f; break; }
+function parsePago(linea, fecha, pasivos) {
+  let { moneda, formaPago } = canalDeLinea(linea);
   const tipo = detectarTipo(linea);
+  const monto = montoDeLinea(linea);
 
-  // El PRIMER importe con R$. En "R$422 ... En total foi R$740" vale 422.
-  let monto = null, mm;
-  RE_MONTO.lastIndex = 0;
-  while ((mm = RE_MONTO.exec(linea)) !== null) {
-    const v = num(mm[1] != null ? mm[1] : mm[2]);
-    if (v != null && v > 0) { monto = v; break; }
-  }
-  if (monto == null) {
-    const cand = []; const reN = /(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?)/g; let n;
-    while ((n = reN.exec(linea)) !== null) {
-      const sig = linea.slice(n.index + n[0].length, n.index + n[0].length + 3).toLowerCase();
-      if (/^\s*h/.test(sig)) continue;              // no confundir horas con plata
-      const v = num(n[1]); if (v != null) cand.push(v);
-    }
-    if (cand.length) monto = Math.max(...cand);
-  }
+  // El alumno le pagó en mano al instructor: la plata no entró a ninguna
+  // caja nuestra, así que va como BRL genérico, y se le descuenta de lo que
+  // le debemos en su tarjeta de pasivos.
+  const hitD = RE_DIRECTO.test(linea) ? buscarPasivo(linea, pasivos) : null;
+  const directo = hitD ? hitD.pasivo : null;
+  if (directo) { moneda = 'BRL'; formaPago = 'Efectivo'; }
 
   let horas = null;
   const d = RE_HORAS_DUR.exec(linea);
   if (d) { const v = num(d[1]); if (v != null && v > 0 && v <= 12) horas = v; }
 
-  let al = linea.replace(/\bpagamentos?\b|\bpagos?\b|\bse[nñ]a\b/ig, ' ');
+  let al = linea.replace(/\bpagamentos?\b|\bpagos?\b|\bse[nñ]a\b|\bdirec?to\b/ig, ' ');
   if (tipo) al = al.replace(tipo.match, ' ');
   al = al.replace(RE_MONTO, ' ').replace(RE_HORAS_DUR, ' ');
   for (const [re] of CANALES) al = al.replace(re, ' ');
@@ -233,13 +326,21 @@ function parsePago(linea, fecha) {
          .replace(/\d+/g, ' ').replace(/[-–—:]+/g, ' ').replace(/\s{2,}/g, ' ')
          .trim().replace(/^[\s\-–:,.]+|[\s\-–:,.]+$/g, '');
 
+  // En "Thalissa R$500 directo a Facu" el alumno es Thalissa: saco el nombre
+  // del instructor para que no quede pegado al detalle.
+  if (directo) {
+    al = al.replace(new RegExp('(^|\\s)' + hitD.token + '\\w*(\\s|$)', 'ig'), ' ')
+           .replace(/(^|\s)a(\s|$)/ig, ' ').replace(/\s{2,}/g, ' ').trim();
+  }
+
   return {
     kind: 'INGRESO', code: tipo ? tipo.code : null, actividad: tipo ? tipo.act : 'Ingreso',
     fecha, horas, monto, moneda, formaPago, alumno: al || null, linea: linea.trim(),
+    pasivoDirectoId: directo ? directo.id : null,
   };
 }
 
-function parseMensaje(texto, anioDef, instructores, fechaFallback, asignadoDefault) {
+function parseMensaje(texto, anioDef, instructores, fechaFallback, asignadoDefault, pasivos) {
   const out = []; let fecha = null, modo = 'clase';
 
   for (const raw of texto.split('\n')) {
@@ -251,8 +352,9 @@ function parseMensaje(texto, anioDef, instructores, fechaFallback, asignadoDefau
       const y = wa[3].length === 2 ? 2000 + +wa[3] : +wa[3];
       fecha = `${y}-${pad(+wa[2])}-${pad(+wa[1])}`;
       const resto = wa[4].trim(); if (!resto) continue;
-      const it = /pagamento|pago/i.test(resto)
-        ? parsePago(resto, fecha) : parseClase(resto, fecha, instructores);
+      const it = /\bgastos?\b|\bdespesas?\b/i.test(resto)  ? parseGasto(resto, fecha, pasivos)
+               : /pagamento|pago/i.test(resto)             ? parsePago(resto, fecha, pasivos)
+               : parseClase(resto, fecha, instructores);
       if (it) out.push(it);
       continue;
     }
@@ -272,12 +374,17 @@ function parseMensaje(texto, anioDef, instructores, fechaFallback, asignadoDefau
       continue;
     }
     if (/^\s*pagamentos?\s*$|^\s*pagos?\s*$/i.test(l)) { modo = 'pago'; continue; }
+    if (/^\s*(gastos?|despesas?|egresos?|sa[ií]das?)\s*$/i.test(l)) { modo = 'gasto'; continue; }
     if (/^\s*(amanha|amanhã|manhã)\b/i.test(l)) { modo = 'clase'; continue; }
 
-    const inline = /^\s*pagamentos?\b/i.test(l);
-    const item = (modo === 'pago' || inline)
-      ? parsePago(l, fecha || fechaFallback)
-      : parseClase(l, fecha || fechaFallback, instructores);
+    // "Pagamento Fulano 500" suelto arriba del todo se lee como pago. Dentro
+    // de Gastos no: ahí "Pagamento X" es una salida de plata.
+    const inline = modo !== 'gasto' && /^\s*pagamentos?\b/i.test(l);
+    const item = modo === 'gasto'
+      ? parseGasto(l, fecha || fechaFallback, pasivos)
+      : (modo === 'pago' || inline)
+        ? parsePago(l, fecha || fechaFallback, pasivos)
+        : parseClase(l, fecha || fechaFallback, instructores);
     if (item) out.push(item);
   }
 
@@ -373,6 +480,7 @@ export default function ImportarMensaje({ onClose, onImportado }) {
   const [texto, setTexto] = useState('');
   const [items, setItems] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
+  const [pasivos, setPasivos] = useState([]);
   const [guardando, setGuardando] = useState(false);
   const { asignadoAuto, opcionActual } = usePresencia();
 
@@ -401,12 +509,21 @@ export default function ImportarMensaje({ onClose, onImportado }) {
       })
       .sort((a, b) => a.nombre.localeCompare(b.nombre))))
       .catch((e) => { console.error('[Importar] no se pudo traer usuarios:', e); setUsuarios([]); });
+
+    // Tarjetas de cuenta corriente: para enganchar pagos/adelantos y los
+    // cobros que el alumno le hace directo al instructor.
+    api.get('/api/pasivos')
+      .then((r) => setPasivos((r.data || [])
+        .filter((p) => p && p.titulo)
+        .map((p) => ({ id: p.id, titulo: p.titulo }))
+        .sort((a, b) => a.titulo.localeCompare(b.titulo))))
+      .catch((e) => { console.error('[Importar] no se pudo traer pasivos:', e); setPasivos([]); });
   }, []);
 
   const analizar = () => {
-    const r = parseMensaje(texto, anio, usuarios, hoy, asignadoDefault);
+    const r = parseMensaje(texto, anio, usuarios, hoy, asignadoDefault, pasivos);
     if (!r.length) {
-      alert('No se reconoció ninguna clase ni pago. Revisá que las líneas tengan horario o monto.');
+      alert('No se reconoció ninguna clase, pago ni gasto. Revisá que las líneas tengan horario o monto.');
       return;
     }
     setItems(r);
@@ -432,6 +549,22 @@ export default function ImportarMensaje({ onClose, onImportado }) {
           tarifa: 120,
           estado: 'PENDIENTE',
         });
+      } else if (it.kind === 'EGRESO') {
+        // Sale plata de una caja. Si además está enganchado a una tarjeta de
+        // cuenta corriente, el mismo endpoint registra el movimiento del
+        // pasivo (ver FinanzasService): un solo POST hace las dos cosas.
+        await api.post('/api/clases/guardar', {
+          tipoTransaccion: 'EGRESO',
+          fecha: it.fecha,
+          actividad: it.actividad || 'Otros',
+          instructor: opcionActual?.label || 'Importado del grupo',
+          total: String(Number(it.monto) || 0),
+          moneda: it.moneda || 'R$_EFECTIVO',
+          formaPago: it.formaPago || 'Efectivo',
+          detalles: it.alumno || '',
+          pasivoId: it.pasivoId ? Number(it.pasivoId) : null,
+          tipoMovimientoPasivo: it.pasivoId ? (it.tipoMovimientoPasivo || 'PAGO_DEUDA') : null,
+        });
       } else {
         // Con tarjeta de crédito el banco se queda el 5%: se guarda el NETO,
         // igual que en la pantalla de Ingreso. Si no, entra el monto entero.
@@ -452,6 +585,18 @@ export default function ImportarMensaje({ onClose, onImportado }) {
           asignadoA: it.asignadoA || null,
           comision: String(Math.round(descuento * 100) / 100),
         });
+
+        // Cobro directo: el instructor ya tiene la plata en la mano, así que
+        // le descontamos ese monto de lo que le debemos. No toca caja (por
+        // eso /acumular y no otro egreso).
+        if (it.pasivoDirectoId) {
+          await api.put(`/api/pasivos/${it.pasivoDirectoId}/acumular`, {
+            monto: Math.abs(neto),
+            nota: `Cobró directo del alumno${it.alumno ? ` — ${it.alumno}` : ''}`,
+            fecha: it.fecha,
+            moneda: 'BRL',
+          });
+        }
       }
       setItems((p) => p.map((x) => (x._id === it._id ? { ...x, estado: 'ok' } : x)));
       if (onImportado) onImportado();
@@ -470,6 +615,7 @@ export default function ImportarMensaje({ onClose, onImportado }) {
 
   const clases = items.filter((i) => i.kind === 'CLASE');
   const pagos  = items.filter((i) => i.kind === 'INGRESO');
+  const gastos = items.filter((i) => i.kind === 'EGRESO');
   const pend   = items.filter((i) => i.estado === 'pendiente').length;
   const listos = items.filter((i) => i.estado === 'ok').length;
 
@@ -504,7 +650,7 @@ export default function ImportarMensaje({ onClose, onImportado }) {
 
       <textarea
         value={texto} onChange={(e) => setTexto(e.target.value)} rows={8} spellCheck={false}
-        placeholder={'27/08\n\nAulas\nAPK Giuseppe 09:00-11:00 - Hans\nRental wind Renata 10:00-11:00hs\n\nPagamento\nGiuseppe 8h Apk 2.800 R$'}
+        placeholder={'27/08\n\nAulas\nAPK Giuseppe 09:00-11:00 - Hans\nRental wind Renata 10:00-11:00hs\n\nPagamentos\nGiuseppe 8h Apk 2.800 R$ stone Igna\nThalissa R$500 directo a Facu\n\nGastos\nPagamento Reginaldo R$500 stone Igna\nPAGO A Facundo Moreno R$500 stone Igna'}
         style={{ width: '100%', padding: 14, borderRadius: 14, fontSize: 14, lineHeight: 1.6,
           border: `1px solid ${C.borde}`, background: 'rgba(0,0,0,.25)', color: C.texto,
           fontFamily: 'inherit', boxSizing: 'border-box', resize: 'vertical' }}
@@ -617,6 +763,21 @@ export default function ImportarMensaje({ onClose, onImportado }) {
                   <option value="ALE"   style={{ color: '#111' }}>Ausentes · 10 / 10 / 5</option>
                 </select>
               </Campo>
+              <Campo label="Lo cobró en mano" ancho>
+                <select value={it.pasivoDirectoId || ''} style={inp}
+                  onChange={(e) => cambiar(it._id, 'pasivoDirectoId', e.target.value ? Number(e.target.value) : null)}>
+                  <option value="" style={{ color: '#111' }}>— entró a la caja —</option>
+                  {pasivos.map((p) =>
+                    <option key={p.id} value={p.id} style={{ color: '#111' }}>{p.titulo}</option>)}
+                </select>
+              </Campo>
+              {it.pasivoDirectoId && (
+                <div style={{ gridColumn: 'span 4', fontSize: 11, color: C.suave,
+                  background: 'rgba(255,255,255,.06)', padding: '7px 10px', borderRadius: 7 }}>
+                  Entra como BRL genérico y se le descuenta{' '}
+                  <strong>R$ {(Number(it.monto) || 0).toFixed(2)}</strong> de lo que le debemos.
+                </div>
+              )}
               {it.formaPago === 'Tarjeta Crédito' && it.monto > 0 && (
                 <div style={{ gridColumn: 'span 4', fontSize: 11, color: C.pago,
                   background: 'rgba(251,191,36,.1)', padding: '7px 10px', borderRadius: 7 }}>
@@ -624,6 +785,54 @@ export default function ImportarMensaje({ onClose, onImportado }) {
                   {Number(it.monto).toFixed(2)} − {(it.monto * 0.05).toFixed(2)} ={' '}
                   <strong>{(it.monto * 0.95).toFixed(2)}</strong> a caja
                 </div>
+              )}
+            </Tarjeta>
+          ))}
+        </Seccion>
+      )}
+
+      {gastos.length > 0 && (
+        <Seccion titulo="Gastos" cantidad={gastos.length} color={C.gasto}
+          pie="Sale plata de la caja elegida. Si le asignás una cuenta corriente, además queda el movimiento en esa tarjeta.">
+          {gastos.map((it) => (
+            <Tarjeta key={it._id} it={it} color={C.gasto} inp={inp}
+              onCambiar={cambiar} onDescartar={descartar} onConfirmar={confirmarUno} guardando={guardando}>
+              <Campo label="Monto">
+                <input type="number" step="0.01" value={it.monto ?? ''} style={inp}
+                  onChange={(e) => cambiar(it._id, 'monto', e.target.value === '' ? null : parseFloat(e.target.value))} />
+              </Campo>
+              <Campo label="Sale de">
+                <select value={it.moneda || 'R$_EFECTIVO'} style={inp}
+                  onChange={(e) => cambiar(it._id, 'moneda', e.target.value)}>
+                  {[['BRL','BRL genérico'], ['R$_STONE_JOSE','R$ Stone José'],
+                    ['R$_STONE_IGNA','R$ Stone Igna'], ['R$_EFECTIVO','R$ Efectivo'],
+                    ['EUR_WIZE_IGNA','€ Wize Igna'], ['USD_EFECTIVO','USD Efectivo']]
+                    .map(([v, t]) => <option key={v} value={v} style={{ color: '#111' }}>{t}</option>)}
+                </select>
+              </Campo>
+              <Campo label="Categoría" ancho>
+                <select value={it.actividad || 'Otros'} style={inp}
+                  onChange={(e) => cambiar(it._id, 'actividad', e.target.value)}>
+                  {CATEGORIAS_EGRESO.map((c) =>
+                    <option key={c} value={c} style={{ color: '#111' }}>{c}</option>)}
+                </select>
+              </Campo>
+              <Campo label="Cuenta corriente" ancho>
+                <select value={it.pasivoId || ''} style={inp}
+                  onChange={(e) => cambiar(it._id, 'pasivoId', e.target.value ? Number(e.target.value) : null)}>
+                  <option value="" style={{ color: '#111' }}>— ninguna, gasto suelto —</option>
+                  {pasivos.map((p) =>
+                    <option key={p.id} value={p.id} style={{ color: '#111' }}>{p.titulo}</option>)}
+                </select>
+              </Campo>
+              {it.pasivoId && (
+                <Campo label="Tipo de movimiento" ancho>
+                  <select value={it.tipoMovimientoPasivo || 'PAGO_DEUDA'} style={inp}
+                    onChange={(e) => cambiar(it._id, 'tipoMovimientoPasivo', e.target.value)}>
+                    <option value="PAGO_DEUDA" style={{ color: '#111' }}>Pago de deuda</option>
+                    <option value="ADELANTO"   style={{ color: '#111' }}>Adelanto</option>
+                  </select>
+                </Campo>
               )}
             </Tarjeta>
           ))}
