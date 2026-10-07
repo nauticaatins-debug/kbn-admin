@@ -45,6 +45,12 @@ public class PasswordResetService {
         Usuario usuario = usuarioRepository.findByEmail(email)
                 .orElseThrow(() -> new Exception("EMAIL_NOT_FOUND"));
 
+        // Sin API key no hay forma de mandar el mail: mejor avisarlo claro que
+        // generar un token que nunca le va a llegar a nadie.
+        if (sendgridApiKey == null || sendgridApiKey.isBlank()) {
+            throw new Exception("SENDGRID_NO_CONFIGURADO");
+        }
+
         String token = UUID.randomUUID().toString();
         usuario.setResetToken(token);
         usuario.setResetTokenExpiry(LocalDateTime.now().plusHours(TOKEN_EXPIRY_HOURS));
