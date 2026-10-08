@@ -7,7 +7,6 @@ import MonitorCalendario from './MonitorCalendario';
 import MonitorDia        from './MonitorDia';
 import { ModalEditarClase, ModalNuevoIngreso, ModalAgendar } from './MonitorModales';
 import MonitorResumen    from './MonitorResumen';
-import MonitorPendientes from './MonitorPendientes';
 
 export const NA = {
   primary:'#1ABFA0',
@@ -644,15 +643,6 @@ const Monitor = () => {
   return (
     <div style={{ maxWidth:940, margin:'0 auto', padding:'0 14px 80px', fontFamily:'system-ui,sans-serif' }}>
       <style>{`@keyframes mspin{to{transform:rotate(360deg)}}`}</style>
-
-      <MonitorPendientes
-        agenda={agenda}
-        ingresos={ingresos}
-        tieneCobro={tieneCobro}
-        instructores={instructoresSelect}
-        cargar={cargar}
-        setDiaSelec={setDiaSelec}
-      />
 
       <MonitorCalendario
         mes={mes} navMes={navMes}
