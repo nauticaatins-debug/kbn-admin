@@ -756,15 +756,27 @@ export default function ImportarMensaje({ onClose, onImportado }) {
             cubre.includes(a.id) ? { ...a, cobrada: true } : a));
         }
 
-        // Cobro directo: el instructor ya tiene la plata en la mano, así que
-        // le descontamos ese monto de lo que le debemos. No toca caja (por
-        // eso /acumular y no otro egreso).
+        // Cobro directo: el alumno le pagó en mano al instructor. La plata
+        // entró (el ingreso de arriba) pero nunca llegó a ninguna caja
+        // nuestra: se la quedó él a cuenta de lo que le debemos. Por eso va
+        // también el egreso espejo, que deja la caja en cero y, al llevar
+        // pasivoId, descuenta el monto de su tarjeta en el mismo movimiento.
+        //
+        // Antes esto se hacía con /acumular, que toca la tarjeta pero NO la
+        // caja: el saldo del instructor quedaba bien y la caja se inflaba
+        // con plata que nunca estuvo.
         if (it.pasivoDirectoId) {
-          await api.put(`/api/pasivos/${it.pasivoDirectoId}/acumular`, {
-            monto: Math.abs(neto),
-            nota: `Cobró directo del alumno${it.alumno ? ` — ${it.alumno}` : ''}`,
+          await api.post('/api/clases/guardar', {
+            tipoTransaccion: 'EGRESO',
+            tipoMovimientoPasivo: 'PAGO_DEUDA',
+            pasivoId: Number(it.pasivoDirectoId),
             fecha: it.fecha,
+            actividad: 'Honorarios Instructores',
+            instructor: opcionActual?.label || 'Importado del grupo',
+            total: String(neto),
             moneda: 'BRL',
+            formaPago: 'Efectivo',
+            detalles: `Cobró directo del alumno${it.alumno ? ` — ${it.alumno}` : ''}`,
           });
         }
       }
@@ -970,8 +982,10 @@ export default function ImportarMensaje({ onClose, onImportado }) {
               {it.pasivoDirectoId && (
                 <div style={{ gridColumn: 'span 4', fontSize: 11, color: C.suave,
                   background: 'rgba(255,255,255,.06)', padding: '7px 10px', borderRadius: 7 }}>
-                  Entra como BRL genérico y se le descuenta{' '}
-                  <strong>R$ {(Number(it.monto) || 0).toFixed(2)}</strong> de lo que le debemos.
+                  Van tres movimientos: ingreso de{' '}
+                  <strong>R$ {(Number(it.monto) || 0).toFixed(2)}</strong> en BRL genérico, el egreso
+                  espejo por el mismo monto —la plata nunca entró a la caja— y el descuento en su
+                  tarjeta. La caja queda igual que antes.
                 </div>
               )}
               {(() => {
