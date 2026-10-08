@@ -8,35 +8,8 @@ const MonitorCalendario = ({
   instructores, alertas, cargar, abrirIngreso,
 }) => (
   <div>
-    {/* ── BANNER ALERTAS ── */}
-    {alertas.length > 0 && (
-      <details style={{ background:'rgba(234,88,12,.15)', border:'1px solid #FED7AA', borderRadius:14, padding:'12px 16px', marginBottom:14 }}>
-        <summary style={{ fontWeight:700, color:'#9A3412', fontSize:14, cursor:'pointer', display:'flex', alignItems:'center', gap:8, listStyle:'none' }}>
-          <i className="ti ti-alert-triangle" style={{ color:'#EA580C', fontSize:17 }}/>
-          {alertas.length} clase{alertas.length>1?'s':''} sin cobro registrado
-        </summary>
-        <div style={{ marginTop:12, display:'flex', flexDirection:'column', gap:8 }}>
-          {alertas.map(a => {
-            const f = a.fecha?.toString();
-            return (
-              <div key={a.id} style={{ background:'rgba(255,255,255,.07)', borderRadius:10, padding:'10px 14px', display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:8 }}>
-                <div>
-                  <p style={{ margin:0, fontWeight:600, color:'rgba(255,255,255,.9)', fontSize:13 }}>{a.alumno}</p>
-                  <p style={{ margin:'2px 0 0', fontSize:11, color:'rgba(255,255,255,.5)' }}>
-                    {fmt(f)} · {a.nombreInstructor} · {a.horas}h {a.tipoAula && `· ${a.tipoAula}`}
-                  </p>
-                </div>
-                <div style={{ display:'flex', gap:6 }}>
-                  <Btn label="Ver día" bg={NA.light} color={NA.darker} small onClick={() => setDiaSelec(f)}/>
-                  <Btn label="+ Ingreso" small icon="ti-cash"
-                    onClick={() => abrirIngreso(f, { instructor: a.nombreInstructor })}/>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </details>
-    )}
+    {/* El banner de alertas se fue a MonitorPendientes, que además deja
+        confirmar y conectar de a varias en vez de clase por clase. */}
 
     {/* ── FILTROS ── */}
     <div style={{ background:'rgba(255,255,255,.07)', borderRadius:14, border:`0.5px solid rgba(255,255,255,.1)`, padding:'10px 14px', marginBottom:12, display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
