@@ -481,6 +481,9 @@ export default function ImportarMensaje({ onClose, onImportado }) {
   const [items, setItems] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
   const [pasivos, setPasivos] = useState([]);
+  // Clases ya existentes + las que se van creando en esta misma importación.
+  // Sirve para enganchar cada pago a las clases que cubre.
+  const [agendaPool, setAgendaPool] = useState([]);
   const [guardando, setGuardando] = useState(false);
   const { asignadoAuto, opcionActual } = usePresencia();
 
@@ -518,9 +521,57 @@ export default function ImportarMensaje({ onClose, onImportado }) {
         .map((p) => ({ id: p.id, titulo: p.titulo }))
         .sort((a, b) => a.titulo.localeCompare(b.titulo))))
       .catch((e) => { console.error('[Importar] no se pudo traer pasivos:', e); setPasivos([]); });
+
+    cargarAgenda();
   }, []);
 
+  const cargarAgenda = () =>
+    api.get('/api/agenda/listar')
+      .then((r) => setAgendaPool((r.data || []).map((a) => ({
+        id: a.id,
+        alumno: a.alumno,
+        fecha: String(a.fecha || '').slice(0, 10),
+        cobrada: !!a.cobrada,
+        estado: a.estado,
+      }))))
+      .catch((e) => { console.error('[Importar] no se pudo traer agenda:', e); setAgendaPool([]); });
+
+  // Clases candidatas a quedar cubiertas por un pago: mismo alumno, sin cobro
+  // todavía, y dentro de una ventana razonable alrededor de la fecha del pago
+  // (suelen pagar el paquete entero al final, días después de la primera clase).
+  const clasesDelPago = (it) => {
+    const n = sinTildes(it.alumno || '');
+    if (n.length < 3 || !it.fecha) return [];
+    const dia = (s) => Math.floor(new Date(`${s}T00:00:00`).getTime() / 86400000);
+    const dPago = dia(it.fecha);
+    return agendaPool.filter((a) => {
+      if (a.cobrada || a.estado === 'RECHAZADA' || !a.alumno || !a.fecha) return false;
+      const an = sinTildes(a.alumno);
+      if (!(an.includes(n) || n.includes(an))) return false;
+      const d = dia(a.fecha) - dPago;
+      return d >= -60 && d <= 15;
+    });
+  };
+
+  // Las que el usuario dejó marcadas. Si todavía no tocó nada, van todas.
+  const clasesElegidas = (it) => {
+    const cand = clasesDelPago(it);
+    if (!Array.isArray(it.agendaIds)) return cand;
+    return cand.filter((a) => it.agendaIds.includes(a.id));
+  };
+
+  const toggleClase = (it, id) => {
+    const actuales = clasesElegidas(it).map((a) => a.id);
+    const nuevas = actuales.includes(id)
+      ? actuales.filter((x) => x !== id)
+      : [...actuales, id];
+    cambiar(it._id, 'agendaIds', nuevas);
+  };
+
+  const esPasada = (f) => !!f && f <= hoy;
+
   const analizar = () => {
+    cargarAgenda();   // por si cargaron clases desde otra pantalla mientras tanto
     const r = parseMensaje(texto, anio, usuarios, hoy, asignadoDefault, pasivos);
     if (!r.length) {
       alert('No se reconoció ninguna clase, pago ni gasto. Revisá que las líneas tengan horario o monto.');
@@ -537,7 +588,7 @@ export default function ImportarMensaje({ onClose, onImportado }) {
     setGuardando(true);
     try {
       if (it.kind === 'CLASE') {
-        await api.post('/api/agenda/crear', {
+        const res = await api.post('/api/agenda/crear', {
           alumno: it.alumno || 'Sin nombre',
           fecha: it.fecha,
           hora: it.hora ? `${it.hora}:00` : null,
@@ -549,6 +600,30 @@ export default function ImportarMensaje({ onClose, onImportado }) {
           tarifa: 120,
           estado: 'PENDIENTE',
         });
+
+        const creada = res.data || {};
+        if (creada.id) {
+          // Queda disponible para que un pago de este mismo mensaje la enganche
+          setAgendaPool((p) => [...p, {
+            id: creada.id, alumno: it.alumno || '', fecha: it.fecha,
+            cobrada: false, estado: 'PENDIENTE',
+          }]);
+
+          // Una clase que ya pasó y tiene instructor no tiene nada que esperar:
+          // se confirma y se liquida sola. Solo las futuras quedan pendientes,
+          // para que nadie cobre algo que todavía no dio.
+          if (esPasada(it.fecha) && it.instructorId) {
+            await api.put(`/api/agenda/${creada.id}/estado`, 'CONFIRMADA',
+              { headers: { 'Content-Type': 'text/plain' } });
+            try {
+              await api.post(`/api/agenda/${creada.id}/liquidar`);
+            } catch (e) {
+              // Sin tarjeta de pasivo la liquidación falla; la clase igual
+              // queda confirmada, que es lo que importa acá.
+              console.warn('[Importar] no se pudo liquidar:', e.response?.data || e.message);
+            }
+          }
+        }
       } else if (it.kind === 'EGRESO') {
         // Sale plata de una caja. Si además está enganchado a una tarjeta de
         // cuenta corriente, el mismo endpoint registra el movimiento del
@@ -572,6 +647,12 @@ export default function ImportarMensaje({ onClose, onImportado }) {
         const descuento = it.formaPago === 'Tarjeta Crédito' ? bruto * 0.05 : 0;
         const neto     = Math.round((bruto - descuento) * 100) / 100;
 
+        // Clases que cubre este pago. Sin esto quedaban para siempre en
+        // "clases sin registro de cobro": el Monitor solo las da por cobradas
+        // si hay vínculo explícito o si el ingreso cae el mismo día, y casi
+        // nunca cae el mismo día porque pagan el paquete al final.
+        const cubre = clasesElegidas(it).map((a) => a.id);
+
         await api.post('/api/clases/guardar', {
           tipoTransaccion: 'INGRESO',
           fecha: it.fecha,
@@ -584,7 +665,14 @@ export default function ImportarMensaje({ onClose, onImportado }) {
           detalles: it.alumno || '',
           asignadoA: it.asignadoA || null,
           comision: String(Math.round(descuento * 100) / 100),
+          agendaIds: cubre.length ? cubre.join(',') : null,
         });
+
+        // El backend ya las marcó cobradas; que no las vuelva a ofrecer
+        if (cubre.length) {
+          setAgendaPool((p) => p.map((a) =>
+            cubre.includes(a.id) ? { ...a, cobrada: true } : a));
+        }
 
         // Cobro directo: el instructor ya tiene la plata en la mano, así que
         // le descontamos ese monto de lo que le debemos. No toca caja (por
@@ -607,7 +695,12 @@ export default function ImportarMensaje({ onClose, onImportado }) {
   };
 
   const confirmarTodos = async () => {
-    for (const it of items.filter((x) => x.estado === 'pendiente')) {
+    // Las clases primero: así cuando toca el pago las clases ya existen y se
+    // pueden enganchar. Si fuera al revés, el pago no tendría qué cubrir.
+    const orden = { CLASE: 0, INGRESO: 1, EGRESO: 2 };
+    const cola = items.filter((x) => x.estado === 'pendiente')
+      .sort((a, b) => orden[a.kind] - orden[b.kind]);
+    for (const it of cola) {
       // eslint-disable-next-line no-await-in-loop
       await confirmarUno(it);
     }
@@ -778,6 +871,39 @@ export default function ImportarMensaje({ onClose, onImportado }) {
                   <strong>R$ {(Number(it.monto) || 0).toFixed(2)}</strong> de lo que le debemos.
                 </div>
               )}
+              {(() => {
+                const cand = clasesDelPago(it);
+                if (!cand.length) return (
+                  <div style={{ gridColumn: 'span 4', fontSize: 11, color: C.pago,
+                    background: 'rgba(251,191,36,.1)', padding: '7px 10px', borderRadius: 7 }}>
+                    No encontré clases sin cobrar de {it.alumno || 'este alumno'}. El ingreso se
+                    guarda igual, pero las clases van a seguir figurando como no cobradas.
+                  </div>
+                );
+                const elegidas = clasesElegidas(it).map((a) => a.id);
+                return (
+                  <div style={{ gridColumn: 'span 4' }}>
+                    <label style={{ fontSize: 10, color: C.tenue, display: 'block', marginBottom: 5 }}>
+                      Clases que cubre — {elegidas.length} de {cand.length}
+                    </label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {cand.map((a) => {
+                        const on = elegidas.includes(a.id);
+                        return (
+                          <button key={a.id} type="button" onClick={() => toggleClase(it, a.id)}
+                            style={{ fontSize: 11, padding: '5px 10px', borderRadius: 99, cursor: 'pointer',
+                              border: `1px solid ${on ? C.ok : C.borde}`,
+                              background: on ? 'rgba(52,211,153,.14)' : 'transparent',
+                              color: on ? C.ok : C.suave }}>
+                            {on ? '✓ ' : ''}{a.fecha.slice(8, 10)}/{a.fecha.slice(5, 7)} {a.alumno}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {it.formaPago === 'Tarjeta Crédito' && it.monto > 0 && (
                 <div style={{ gridColumn: 'span 4', fontSize: 11, color: C.pago,
                   background: 'rgba(251,191,36,.1)', padding: '7px 10px', borderRadius: 7 }}>
