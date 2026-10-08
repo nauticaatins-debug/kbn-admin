@@ -377,15 +377,26 @@ public class AgendaController {
                     ? saved.getInstructorId() != null
                     : !instrAntes.equals(saved.getInstructorId());
 
+            // Sacar una clase de FINALIZADA (por ejemplo volverla a PENDIENTE con
+            // el toggle "notificar", o al desasignar el instructor) dejaba el
+            // movimiento acreditado en la tarjeta del instructor. Resultado: el
+            // Monitor la mostraba sin confirmar y el pasivo la seguía contando.
+            boolean salioDeFinalizada = yaLiquidada && !"FINALIZADA".equals(saved.getEstado());
+
             String avisoLiquidacion = null;
-            if (yaLiquidada && (cambioHoras || cambioInstr)) {
+            if (yaLiquidada && (cambioHoras || cambioInstr || salioDeFinalizada)) {
                 int revertidos = revertirLiquidacion(saved.getId());
                 if (revertidos > 0) {
-                    // Queda para volver a liquidar con los datos corregidos
-                    saved.setEstado("CONFIRMADA");
-                    saved = agendaRepository.save(saved);
+                    // Si volvió a PENDIENTE a propósito, ese estado se respeta.
+                    // Si no, queda CONFIRMADA para volver a liquidar corregida.
+                    if (!salioDeFinalizada) {
+                        saved.setEstado("CONFIRMADA");
+                        saved = agendaRepository.save(saved);
+                    }
                     avisoLiquidacion = "Se deshizo la liquidación anterior ("
-                            + (cambioInstr ? "cambió el instructor" : "cambiaron las horas")
+                            + (cambioInstr ? "cambió el instructor"
+                             : cambioHoras ? "cambiaron las horas"
+                             : "la clase dejó de estar finalizada")
                             + "). Volvé a liquidar la clase.";
                 }
             }
