@@ -344,19 +344,20 @@ function parseMensaje(texto, anioDef, instructores, fechaFallback, asignadoDefau
   const out = []; let fecha = null, modo = 'clase';
 
   for (const raw of texto.split('\n')) {
-    const l = raw.trim(); if (!l) continue;
+    const linea = raw.trim(); if (!linea) continue;
 
-    // Encabezado de WhatsApp: [28/8/26, 3:22:04 p. m.] Jose Sanchez: resto
+    // Encabezado de WhatsApp: "[26/9/26, 11:14 p. m.] Igna: 18/9"
+    // La fecha del encabezado es cuándo se MANDÓ el mensaje, que casi nunca es
+    // el día de las clases: suelen mandar el resumen de varios días atrasados.
+    // Por eso lo que viene después de los dos puntos se trata como una línea
+    // normal, y si es una fecha o un título de sección, manda esa.
+    let l = linea;
     const wa = l.match(/^\[(\d{1,2})[/.](\d{1,2})[/.](\d{2,4}),[^\]]*\]\s*[^:]*:\s*(.*)$/);
     if (wa) {
       const y = wa[3].length === 2 ? 2000 + +wa[3] : +wa[3];
       fecha = `${y}-${pad(+wa[2])}-${pad(+wa[1])}`;
-      const resto = wa[4].trim(); if (!resto) continue;
-      const it = /\bgastos?\b|\bdespesas?\b/i.test(resto)  ? parseGasto(resto, fecha, pasivos)
-               : /pagamento|pago/i.test(resto)             ? parsePago(resto, fecha, pasivos)
-               : parseClase(resto, fecha, instructores);
-      if (it) out.push(it);
-      continue;
+      l = wa[4].trim();
+      if (!l) continue;
     }
 
     const f = RE_FECHA.exec(l);
@@ -379,7 +380,8 @@ function parseMensaje(texto, anioDef, instructores, fechaFallback, asignadoDefau
 
     // "Pagamento Fulano 500" suelto arriba del todo se lee como pago. Dentro
     // de Gastos no: ahí "Pagamento X" es una salida de plata.
-    const inline = modo !== 'gasto' && /^\s*pagamentos?\b/i.test(l);
+    // "Pago NZ Stone Jose r$1050" suelto, sin el título Pagamentos arriba.
+    const inline = modo !== 'gasto' && /^\s*pag(?:os?|amentos?)\b/i.test(l);
     const item = modo === 'gasto'
       ? parseGasto(l, fecha || fechaFallback, pasivos)
       : (modo === 'pago' || inline)
@@ -419,16 +421,25 @@ const Seccion = ({ titulo, cantidad, color, pie, children }) => (
   </section>
 );
 
-const Tarjeta = ({ it, color, inp, onCambiar, onDescartar, onConfirmar, guardando, children }) => {
+const Tarjeta = ({ it, color, inp, dup, onCambiar, onDescartar, onConfirmar, guardando, children }) => {
   const ok = it.estado === 'ok';
   const err = it.estado === 'error';
   return (
     <article style={{
       background: ok ? 'rgba(52,211,153,.08)' : err ? 'rgba(248,113,113,.08)' : C.fondo,
-      border: `1px solid ${ok ? 'rgba(52,211,153,.3)' : err ? 'rgba(248,113,113,.35)' : C.borde}`,
-      borderLeft: `3px solid ${ok ? C.ok : err ? C.error : color}`,
+      border: `1px solid ${ok ? 'rgba(52,211,153,.3)' : err ? 'rgba(248,113,113,.35)'
+             : dup ? 'rgba(251,191,36,.45)' : C.borde}`,
+      borderLeft: `3px solid ${ok ? C.ok : err ? C.error : dup ? C.pago : color}`,
       borderRadius: 13, padding: 13, opacity: ok ? .7 : 1,
     }}>
+      {dup && !ok && (
+        <div style={{ margin: '0 0 10px', fontSize: 11.5, color: C.pago, lineHeight: 1.5,
+          background: 'rgba(251,191,36,.12)', padding: '8px 10px', borderRadius: 8 }}>
+          Ya hay una clase cargada ese día: <strong>{dup.alumno || 'sin nombre'}</strong>
+          {dup.hora ? ` a las ${dup.hora}` : ''}{dup.instructor ? ` con ${dup.instructor}` : ''}
+          {' '}({dup.estado.toLowerCase()}). Si es la misma, descartala.
+        </div>
+      )}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: ok ? 0 : 11 }}>
         <strong style={{ fontSize: 15, color: C.texto, fontWeight: 600 }}>
           {it.alumno || <span style={{ color: C.tenue, fontWeight: 400 }}>sin nombre</span>}
@@ -485,6 +496,7 @@ export default function ImportarMensaje({ onClose, onImportado }) {
   // Sirve para enganchar cada pago a las clases que cubre.
   const [agendaPool, setAgendaPool] = useState([]);
   const [guardando, setGuardando] = useState(false);
+  const [verMonitor, setVerMonitor] = useState(true);
   const { asignadoAuto, opcionActual } = usePresencia();
 
   const hoy = new Date().toISOString().slice(0, 10);
@@ -531,6 +543,8 @@ export default function ImportarMensaje({ onClose, onImportado }) {
         id: a.id,
         alumno: a.alumno,
         fecha: String(a.fecha || '').slice(0, 10),
+        hora: a.hora ? String(a.hora).slice(0, 5) : null,
+        instructor: a.nombreInstructor || null,
         cobrada: !!a.cobrada,
         estado: a.estado,
       }))))
@@ -570,6 +584,39 @@ export default function ImportarMensaje({ onClose, onImportado }) {
 
   const esPasada = (f) => !!f && f <= hoy;
 
+  // ── Verificación contra el monitor ────────────────────────────────────────
+  // Suben de a poco, así que la misma clase puede venir en dos mensajes. Antes
+  // de confirmar nada, cada tarjeta se compara con lo que ya está cargado ese
+  // día: mismo alumno = repetida; misma hora y mismo instructor sin alumno
+  // reconocido = sospechosa.
+  const duplicadoDe = (it) => {
+    if (it.kind !== 'CLASE' || !it.fecha) return null;
+    const n = sinTildes(it.alumno || '');
+    const delDia = agendaPool.filter((a) => a.fecha === it.fecha && a.estado !== 'RECHAZADA');
+    if (n.length >= 3) {
+      const m = delDia.find((a) => {
+        const an = sinTildes(a.alumno || '');
+        return an.length >= 3 && (an.includes(n) || n.includes(an));
+      });
+      if (m) return m;
+    }
+    if (it.hora) {
+      const m = delDia.find((a) => a.hora && a.hora.slice(0, 5) === it.hora);
+      if (m) return m;
+    }
+    return null;
+  };
+
+  // Los días que toca este mensaje, para mostrar al lado lo que ya hay cargado
+  const diasDelMensaje = [...new Set(items.map((i) => i.fecha).filter(Boolean))].sort();
+  const yaCargado = diasDelMensaje.map((d) => ({
+    fecha: d,
+    clases: agendaPool
+      .filter((a) => a.fecha === d && a.estado !== 'RECHAZADA')
+      .sort((a, b) => String(a.hora || '').localeCompare(String(b.hora || ''))),
+  }));
+  const repetidas = items.filter((i) => i.estado === 'pendiente' && duplicadoDe(i)).length;
+
   const analizar = () => {
     cargarAgenda();   // por si cargaron clases desde otra pantalla mientras tanto
     const r = parseMensaje(texto, anio, usuarios, hoy, asignadoDefault, pasivos);
@@ -606,6 +653,8 @@ export default function ImportarMensaje({ onClose, onImportado }) {
           // Queda disponible para que un pago de este mismo mensaje la enganche
           setAgendaPool((p) => [...p, {
             id: creada.id, alumno: it.alumno || '', fecha: it.fecha,
+            hora: it.hora || null,
+            instructor: creada.nombreInstructor || null,
             cobrada: false, estado: 'PENDIENTE',
           }]);
 
@@ -719,7 +768,8 @@ export default function ImportarMensaje({ onClose, onImportado }) {
   };
 
   return (
-    <div style={{ padding: '16px 16px 60px', maxWidth: 900, margin: '0 auto', color: C.texto }}>
+    <div style={{ padding: '16px 16px 60px', color: C.texto, margin: '0 auto',
+      maxWidth: verMonitor && items.length > 0 ? 1240 : 900 }}>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
         {onClose && (
@@ -771,6 +821,13 @@ export default function ImportarMensaje({ onClose, onImportado }) {
                 borderRadius: 11, padding: '11px 20px', fontSize: 14, cursor: 'pointer' }}>
               Limpiar
             </button>
+            <button onClick={() => { setVerMonitor((v) => !v); if (!verMonitor) cargarAgenda(); }}
+              style={{ background: verMonitor ? 'rgba(46,207,196,.14)' : 'transparent',
+                color: verMonitor ? C.clase : C.suave,
+                border: `1px solid ${verMonitor ? 'rgba(46,207,196,.4)' : C.borde}`,
+                borderRadius: 11, padding: '11px 20px', fontSize: 14, cursor: 'pointer' }}>
+              Verificar con el monitor
+            </button>
           </>
         )}
       </div>
@@ -781,11 +838,22 @@ export default function ImportarMensaje({ onClose, onImportado }) {
         </p>
       )}
 
+      {repetidas > 0 && (
+        <p style={{ fontSize: 12.5, color: C.pago, margin: '12px 0 0', lineHeight: 1.5,
+          background: 'rgba(251,191,36,.12)', padding: '10px 12px', borderRadius: 10 }}>
+          Ojo: {repetidas} {repetidas === 1 ? 'clase ya parece estar' : 'clases ya parecen estar'} cargada
+          {repetidas === 1 ? '' : 's'}. Están marcadas en amarillo y las ves en el panel de la derecha.
+        </p>
+      )}
+
+      <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 520px', minWidth: 0 }}>
+
       {clases.length > 0 && (
         <Seccion titulo="Clases" cantidad={clases.length} color={C.clase}
           pie="Se crean en el Monitor como pendientes, listas para liquidar al instructor.">
           {clases.map((it) => (
-            <Tarjeta key={it._id} it={it} color={C.clase} inp={inp}
+            <Tarjeta key={it._id} it={it} color={C.clase} inp={inp} dup={duplicadoDe(it)}
               onCambiar={cambiar} onDescartar={descartar} onConfirmar={confirmarUno} guardando={guardando}>
               <Campo label="Hora">
                 <input type="time" value={it.hora || ''} style={inp}
@@ -964,6 +1032,46 @@ export default function ImportarMensaje({ onClose, onImportado }) {
           ))}
         </Seccion>
       )}
+
+        </div>
+
+        {verMonitor && items.length > 0 && (
+          <aside style={{ flex: '0 1 320px', minWidth: 260, position: 'sticky', top: 12,
+            marginTop: 24, background: 'rgba(0,0,0,.22)', border: `1px solid ${C.borde}`,
+            borderRadius: 14, padding: 14, maxHeight: '80vh', overflowY: 'auto' }}>
+            <h3 style={{ margin: '0 0 3px', fontSize: 14, fontWeight: 600, color: C.texto }}>
+              Ya cargado en el monitor
+            </h3>
+            <p style={{ margin: '0 0 12px', fontSize: 11, color: C.tenue, lineHeight: 1.5 }}>
+              Los días que toca este mensaje, como están ahora en la base.
+            </p>
+
+            {yaCargado.every((d) => !d.clases.length) && (
+              <p style={{ fontSize: 12, color: C.tenue, margin: 0 }}>
+                No hay nada cargado en esos días todavía.
+              </p>
+            )}
+
+            {yaCargado.filter((d) => d.clases.length).map((d) => (
+              <div key={d.fecha} style={{ marginBottom: 14 }}>
+                <p style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 600, color: C.clase }}>
+                  {d.fecha.slice(8, 10)}/{d.fecha.slice(5, 7)}
+                  <span style={{ color: C.tenue, fontWeight: 400 }}> · {d.clases.length}</span>
+                </p>
+                {d.clases.map((a) => (
+                  <div key={a.id} style={{ display: 'flex', gap: 7, fontSize: 11.5,
+                    padding: '5px 0', borderBottom: `1px solid ${C.borde}`, color: C.suave }}>
+                    <span style={{ color: C.tenue, minWidth: 36 }}>{a.hora || '--:--'}</span>
+                    <span style={{ flex: 1, color: C.texto, minWidth: 0, overflow: 'hidden',
+                      textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.alumno || 'sin nombre'}</span>
+                    <span style={{ color: a.cobrada ? C.ok : C.tenue }}>{a.cobrada ? 'cobrada' : '—'}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </aside>
+        )}
+      </div>
     </div>
   );
 }
