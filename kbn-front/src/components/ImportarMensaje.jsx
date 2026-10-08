@@ -28,6 +28,9 @@ const C = {
   clase:  '#2ECFC4',
   pago:   '#FBBF24',
   gasto:  '#FB7185',
+  // El aviso de "esto ya está cargado" tiene color propio: antes usaba el
+  // amarillo de Pagos y no se distinguía del color normal de esas tarjetas.
+  dup:    '#C084FC',
   ok:     '#34D399',
   error:  '#F87171',
 };
@@ -428,16 +431,16 @@ const Tarjeta = ({ it, color, inp, dup, onCambiar, onDescartar, onConfirmar, gua
     <article style={{
       background: ok ? 'rgba(52,211,153,.08)' : err ? 'rgba(248,113,113,.08)' : C.fondo,
       border: `1px solid ${ok ? 'rgba(52,211,153,.3)' : err ? 'rgba(248,113,113,.35)'
-             : dup ? 'rgba(251,191,36,.45)' : C.borde}`,
-      borderLeft: `3px solid ${ok ? C.ok : err ? C.error : dup ? C.pago : color}`,
+             : dup ? 'rgba(192,132,252,.55)' : C.borde}`,
+      borderLeft: `3px solid ${ok ? C.ok : err ? C.error : dup ? C.dup : color}`,
       borderRadius: 13, padding: 13, opacity: ok ? .7 : 1,
     }}>
       {dup && !ok && (
-        <div style={{ margin: '0 0 10px', fontSize: 11.5, color: C.pago, lineHeight: 1.5,
-          background: 'rgba(251,191,36,.12)', padding: '8px 10px', borderRadius: 8 }}>
-          Ya hay una clase cargada ese día: <strong>{dup.alumno || 'sin nombre'}</strong>
-          {dup.hora ? ` a las ${dup.hora}` : ''}{dup.instructor ? ` con ${dup.instructor}` : ''}
-          {' '}({dup.estado.toLowerCase()}). Si es la misma, descartala.
+        <div style={{ margin: '0 0 10px', fontSize: 11.5, color: C.dup, lineHeight: 1.5,
+          background: 'rgba(192,132,252,.12)', padding: '8px 10px', borderRadius: 8,
+          border: '1px solid rgba(192,132,252,.3)' }}>
+          <strong style={{ display: 'block', marginBottom: 2 }}>Esto ya parece estar cargado</strong>
+          {dup.texto} — si es lo mismo, descartalo.
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: ok ? 0 : 11 }}>
@@ -495,6 +498,8 @@ export default function ImportarMensaje({ onClose, onImportado }) {
   // Clases ya existentes + las que se van creando en esta misma importación.
   // Sirve para enganchar cada pago a las clases que cubre.
   const [agendaPool, setAgendaPool] = useState([]);
+  // Ingresos y egresos ya registrados, para avisar si un pago o gasto se repite
+  const [movPool, setMovPool] = useState([]);
   const [guardando, setGuardando] = useState(false);
   const [verMonitor, setVerMonitor] = useState(true);
   const { asignadoAuto, opcionActual } = usePresencia();
@@ -548,7 +553,16 @@ export default function ImportarMensaje({ onClose, onImportado }) {
         cobrada: !!a.cobrada,
         estado: a.estado,
       }))))
-      .catch((e) => { console.error('[Importar] no se pudo traer agenda:', e); setAgendaPool([]); });
+      .catch((e) => { console.error('[Importar] no se pudo traer agenda:', e); setAgendaPool([]); })
+      .then(() => api.get('/api/clases/listar'))
+      .then((r) => setMovPool((r?.data || []).map((c) => ({
+        tipo: c.tipoTransaccion,
+        fecha: String(c.fecha || '').slice(0, 10),
+        total: c.total,
+        detalles: c.detalles,
+        actividad: c.actividad,
+      }))))
+      .catch((e) => { console.error('[Importar] no se pudo traer movimientos:', e); setMovPool([]); });
 
   // Clases candidatas a quedar cubiertas por un pago: mismo alumno, sin cobro
   // todavía, y dentro de una ventana razonable alrededor de la fecha del pago
@@ -590,21 +604,40 @@ export default function ImportarMensaje({ onClose, onImportado }) {
   // día: mismo alumno = repetida; misma hora y mismo instructor sin alumno
   // reconocido = sospechosa.
   const duplicadoDe = (it) => {
-    if (it.kind !== 'CLASE' || !it.fecha) return null;
+    if (!it.fecha) return null;
     const n = sinTildes(it.alumno || '');
-    const delDia = agendaPool.filter((a) => a.fecha === it.fecha && a.estado !== 'RECHAZADA');
-    if (n.length >= 3) {
-      const m = delDia.find((a) => {
-        const an = sinTildes(a.alumno || '');
-        return an.length >= 3 && (an.includes(n) || n.includes(an));
-      });
-      if (m) return m;
+    const parecido = (otro) => {
+      const o = sinTildes(otro || '');
+      return n.length >= 3 && o.length >= 3 && (o.includes(n) || n.includes(o));
+    };
+
+    if (it.kind === 'CLASE') {
+      const delDia = agendaPool.filter((a) => a.fecha === it.fecha && a.estado !== 'RECHAZADA');
+      const porNombre = delDia.find((a) => parecido(a.alumno));
+      const m = porNombre || (it.hora ? delDia.find((a) => a.hora === it.hora) : null);
+      if (!m) return null;
+      return { texto: `${m.alumno || 'Sin nombre'}${m.hora ? ` a las ${m.hora}` : ''}`
+        + `${m.instructor ? ` con ${m.instructor}` : ''} (${String(m.estado || '').toLowerCase()})` };
     }
-    if (it.hora) {
-      const m = delDia.find((a) => a.hora && a.hora.slice(0, 5) === it.hora);
-      if (m) return m;
-    }
-    return null;
+
+    // Pagos y gastos: mismo día, monto casi igual y detalle parecido. El monto
+    // guardado es el NETO, así que con tarjeta hay que comparar contra el neto.
+    const tipo = it.kind === 'INGRESO' ? 'INGRESO' : 'EGRESO';
+    const bruto = Number(it.monto) || 0;
+    const neto = it.formaPago === 'Tarjeta Crédito'
+      ? Math.round(bruto * 0.95 * 100) / 100 : bruto;
+    if (!neto) return null;
+
+    const m = movPool.find((c) => {
+      if (c.tipo !== tipo || c.fecha !== it.fecha) return false;
+      const v = Number(c.total) || 0;
+      if (Math.abs(v - neto) > 0.5 && Math.abs(v - bruto) > 0.5) return false;
+      // Mismo día y mismo monto ya es sospechoso; si además el detalle pega, seguro.
+      return n.length < 3 || parecido(c.detalles) || parecido(c.actividad);
+    });
+    if (!m) return null;
+    return { texto: `${tipo === 'INGRESO' ? 'Ingreso' : 'Egreso'} de R$ ${(Number(m.total) || 0).toFixed(2)}`
+      + `${m.detalles ? ` — ${m.detalles}` : ''} el ${it.fecha.slice(8, 10)}/${it.fecha.slice(5, 7)}` };
   };
 
   // Los días que toca este mensaje, para mostrar al lado lo que ya hay cargado
@@ -839,10 +872,12 @@ export default function ImportarMensaje({ onClose, onImportado }) {
       )}
 
       {repetidas > 0 && (
-        <p style={{ fontSize: 12.5, color: C.pago, margin: '12px 0 0', lineHeight: 1.5,
-          background: 'rgba(251,191,36,.12)', padding: '10px 12px', borderRadius: 10 }}>
-          Ojo: {repetidas} {repetidas === 1 ? 'clase ya parece estar' : 'clases ya parecen estar'} cargada
-          {repetidas === 1 ? '' : 's'}. Están marcadas en amarillo y las ves en el panel de la derecha.
+        <p style={{ fontSize: 12.5, color: C.dup, margin: '12px 0 0', lineHeight: 1.5,
+          background: 'rgba(192,132,252,.12)', border: '1px solid rgba(192,132,252,.3)',
+          padding: '10px 12px', borderRadius: 10 }}>
+          Ojo: {repetidas} {repetidas === 1 ? 'tarjeta ya parece' : 'tarjetas ya parecen'} estar
+          cargada{repetidas === 1 ? '' : 's'}. {repetidas === 1 ? 'Está marcada' : 'Están marcadas'} en
+          violeta, con el borde del mismo color. El resto, confirmalas tranquilo.
         </p>
       )}
 
@@ -892,7 +927,7 @@ export default function ImportarMensaje({ onClose, onImportado }) {
         <Seccion titulo="Pagos" cantidad={pagos.length} color={C.pago}
           pie="Al confirmar, la asignación reparte en las cuentas de Igna, José y Hans.">
           {pagos.map((it) => (
-            <Tarjeta key={it._id} it={it} color={C.pago} inp={inp}
+            <Tarjeta key={it._id} it={it} color={C.pago} inp={inp} dup={duplicadoDe(it)}
               onCambiar={cambiar} onDescartar={descartar} onConfirmar={confirmarUno} guardando={guardando}>
               <Campo label="Monto">
                 <input type="number" step="0.01" value={it.monto ?? ''} style={inp}
@@ -989,7 +1024,7 @@ export default function ImportarMensaje({ onClose, onImportado }) {
         <Seccion titulo="Gastos" cantidad={gastos.length} color={C.gasto}
           pie="Sale plata de la caja elegida. Si le asignás una cuenta corriente, además queda el movimiento en esa tarjeta.">
           {gastos.map((it) => (
-            <Tarjeta key={it._id} it={it} color={C.gasto} inp={inp}
+            <Tarjeta key={it._id} it={it} color={C.gasto} inp={inp} dup={duplicadoDe(it)}
               onCambiar={cambiar} onDescartar={descartar} onConfirmar={confirmarUno} guardando={guardando}>
               <Campo label="Monto">
                 <input type="number" step="0.01" value={it.monto ?? ''} style={inp}
