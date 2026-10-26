@@ -268,6 +268,10 @@ public class AgendaController {
         private String hora;        // hora de inicio (HH:mm) — para drag & drop
         private String horaSalida;
         private Double horas;
+        // El alumno a veces entra mal escrito desde el importador ("Cintia 2pm",
+        // "Mauri Laura 3pm"). Poder corregirlo es lo que permite que un mismo
+        // alumno quede escrito igual en todas sus clases.
+        private String alumno;
         private String lugar;
         private String hotelDerivacion;
         private Double tarifa;
@@ -287,6 +291,8 @@ public class AgendaController {
         public void setHoraSalida(String horaSalida) { this.horaSalida = horaSalida; }
         public Double getHoras() { return horas; }
         public void setHoras(Double horas) { this.horas = horas; }
+        public String getAlumno() { return alumno; }
+        public void setAlumno(String alumno) { this.alumno = alumno; }
         public String getLugar() { return lugar; }
         public void setLugar(String lugar) { this.lugar = lugar; }
         public String getHotelDerivacion() { return hotelDerivacion; }
@@ -328,6 +334,8 @@ public class AgendaController {
                 } catch (Exception ignored) {}
             }
             if (req.getHoras()            != null) agenda.setHoras(req.getHoras());
+            if (req.getAlumno()           != null && !req.getAlumno().isBlank())
+                                                   agenda.setAlumno(req.getAlumno().trim());
             if (req.getLugar()            != null) agenda.setLugar(req.getLugar());
             if (req.getHotelDerivacion()  != null) agenda.setHotelDerivacion(req.getHotelDerivacion());
             if (req.getTarifa()           != null) agenda.setTarifa(req.getTarifa());
